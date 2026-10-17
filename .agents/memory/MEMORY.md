@@ -1,0 +1,1 @@
+- [PlayStation generation scope](playstation-generation-scope.md) — keep PS1/PS5 selectable; enable PS2 only after a usable workflow is verified, and leave PS3/PS4 grey.

@@ -5,6 +5,7 @@ dist
 tmp
 out-tsc
 *.tsbuildinfo
+artifacts/ps-recomp-hub/release/
 .expo
 .expo-shared
 

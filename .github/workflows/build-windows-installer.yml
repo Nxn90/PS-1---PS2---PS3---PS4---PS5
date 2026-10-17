@@ -1,0 +1,38 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "hub-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows installer
+        run: pnpm --filter @workspace/ps-recomp-hub run desktop:win
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: playstation-recomp-hub-windows
+          path: artifacts/ps-recomp-hub/release/*.exe
+          if-no-files-found: error

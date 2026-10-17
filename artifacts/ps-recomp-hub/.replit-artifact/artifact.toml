@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "PlayStation Recomp Hub"
+description = "A Windows-oriented desktop companion for organizing legally prepared PlayStation game files and launching generation-specific recompilation tools. Starts with PS1 and PS5 adapter surfaces, keeps PS2/PS3/PS4 clearly unavailable until supported, and is structured for future Windows packaging."
+version = "1.0.0"
+id = "artifacts/ps-recomp-hub"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23654
+
+[services.development]
+run = "pnpm --filter @workspace/ps-recomp-hub run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ps-recomp-hub", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ps-recomp-hub/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23654"
+BASE_PATH = "/"
