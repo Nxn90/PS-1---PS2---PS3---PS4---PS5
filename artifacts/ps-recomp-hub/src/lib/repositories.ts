@@ -22,8 +22,8 @@ export const trackedRepositories: RepositoryDefinition[] = [
   },
   {
     id: 'ps2',
-    slug: 'open-goal/jak-project',
-    url: 'https://github.com/open-goal/jak-project',
+    slug: 'ran-j/PS2Recomp',
+    url: 'https://github.com/ran-j/PS2Recomp',
   },
   {
     id: 'ps3',
@@ -39,6 +39,11 @@ export const trackedRepositories: RepositoryDefinition[] = [
 
 const checkInterval = 15 * 60 * 1000;
 const seenCommitKey = 'ps-recomp-hub:github-seen-v1';
+
+function getSeenKey(repository: RepositoryDefinition) {
+  const repositoryVersion = repository.id === 'ps2' ? `:${repository.slug}` : '';
+  return `${seenCommitKey}:${repository.id}${repositoryVersion}`;
+}
 
 export async function checkRepositories(
   signal?: AbortSignal,
@@ -74,9 +79,9 @@ export async function checkRepositories(
         const latest = commits[0];
         if (!latest?.sha) throw new Error('No commit data returned');
 
-        const seenSha = localStorage.getItem(`${seenCommitKey}:${repository.id}`);
+        const seenSha = localStorage.getItem(getSeenKey(repository));
         const changed = Boolean(seenSha && seenSha !== latest.sha);
-        if (!seenSha) localStorage.setItem(`${seenCommitKey}:${repository.id}`, latest.sha);
+        if (!seenSha) localStorage.setItem(getSeenKey(repository), latest.sha);
 
         return {
           ...repository,
@@ -104,5 +109,7 @@ export async function checkRepositories(
 
 export { checkInterval };
 export function markRepositorySeen(id: RepositoryDefinition['id'], sha: string) {
-  localStorage.setItem(`${seenCommitKey}:${id}`, sha);
+  const repository = trackedRepositories.find((entry) => entry.id === id);
+  if (!repository) throw new Error(`Unknown repository: ${id}`);
+  localStorage.setItem(getSeenKey(repository), sha);
 }

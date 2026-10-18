@@ -61,7 +61,10 @@ ipcMain.handle("hub:choose-input", async (_event, generation, language = "en") =
   const isArabic = language === "ar";
   const filtersByGeneration = {
     ps1: [{ name: isArabic ? "ملفات قرص PS1" : "PS1 CUE files", extensions: ["cue"] }],
-    ps2: [{ name: isArabic ? "صور أقراص PS2" : "PS2 disc images", extensions: ["iso"] }],
+    ps2: [{
+      name: isArabic ? "ملفات مشروع PS2Recomp" : "PS2Recomp project files",
+      extensions: ["elf", "toml", "csv", "iso"],
+    }],
     ps5: [{ name: isArabic ? "ملف PS5 ELF" : "PS5 ELF executable", extensions: ["elf"] }],
   };
   const filters = filtersByGeneration[generation];

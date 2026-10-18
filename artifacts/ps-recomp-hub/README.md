@@ -10,9 +10,12 @@ does not execute native conversion tools.
   general static-recompilation framework, but each game still needs a configured
   project. The app can select multiple CUE discs and check their referenced
   track files; it does not merge disc images or build an arbitrary game.
-- **PS2:** [OpenGOAL](https://github.com/open-goal/jak-project) targets the
-  Jak & Daxter series only. The app can group ISO inputs and link to the project
-  instructions, but it does not run OpenGOAL or turn arbitrary PS2 ISOs into EXEs.
+- **PS2:** [PS2Recomp](https://github.com/ran-j/PS2Recomp) is an experimental
+  static recompiler that translates a PS2 ELF into C++. Its workflow uses a
+  game-specific TOML configuration (and recommends a Ghidra-exported function
+  map for retail/stripped games), then requires building and linking against its
+  runtime. The app can select the ELF/configuration and group ISO images, but
+  does not run the recompiler or turn ISO images directly into EXEs.
 - **PS3:** [PS3Recomp](https://github.com/sp00nznet/ps3recomp) is tracked as an
   upstream toolkit, but is not integrated as a general-purpose converter.
 - **PS5:** [AnyPS5](https://github.com/boykopovar/AnyPS5) can run its Windows
@@ -24,9 +27,10 @@ The app checks the latest public GitHub commit for the four tracked repositories
 on startup and every 15 minutes. It reports upstream changes in the UI; it does
 not automatically download or execute upstream code.
 
-Selecting multiple discs keeps them together as one input set. It does not
-concatenate or modify copyrighted disc files. Actual multi-disc support depends
-on the selected game's own recompilation project.
+Selecting multiple PS1 CUEs or PS2 ISOs keeps them together as one input set. It
+does not concatenate or modify disc files. For PS2, the images are not direct
+PS2Recomp inputs; the tool starts from an ELF and project configuration. Actual
+multi-disc game support depends on that game's own recompilation project.
 
 The app does not include game files, BIOS, firmware, encryption keys, or
 third-party recompilers. The desktop shell asks the user to select local tools

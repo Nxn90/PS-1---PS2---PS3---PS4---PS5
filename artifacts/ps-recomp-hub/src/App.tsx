@@ -155,6 +155,8 @@ function App() {
   const hasCue = cueFiles.length > 0;
   const hasIso = isoFiles.length > 0;
   const hasElf = files.some(({ name }) => extension(name) === 'elf');
+  const hasPs2Config = files.some(({ name }) => extension(name) === 'toml');
+  const hasPs2FunctionMap = files.some(({ name }) => extension(name) === 'csv');
   const hasModule = desktop
     ? Boolean(nativePaths.moduleParentPath)
     : files.some(({ file, name }) => {
@@ -163,7 +165,11 @@ function App() {
       });
   const hasPkg = files.some(({ name }) => extension(name) === 'pkg');
   const discFiles = generation === 'ps1' ? cueFiles : generation === 'ps2' ? isoFiles : [];
-  const isReady = generation === 'ps1' ? hasCue : generation === 'ps2' ? hasIso : hasElf && hasModule && !hasPkg;
+  const isReady = generation === 'ps1'
+    ? hasCue
+    : generation === 'ps2'
+      ? hasElf && hasPs2Config
+      : hasElf && hasModule && !hasPkg;
   const isBlocked = checked && !isReady;
   const title = activeGenerationInfo[generation];
 
@@ -405,7 +411,7 @@ function App() {
   const acceptedFiles = generation === 'ps1'
     ? '.cue,.bin'
     : generation === 'ps2'
-      ? '.iso'
+      ? '.elf,.toml,.csv,.iso'
       : '.elf,.prx,.pkg';
   const dropHintKey: TranslationKey = generation === 'ps1'
     ? 'ps1DropHint'
@@ -631,7 +637,7 @@ function App() {
                   <div>
                     <strong>{t('ps2ScopeTitle')}</strong>
                     <p>{t('ps2Scope')}</p>
-                    <a href="https://github.com/open-goal/jak-project" target="_blank" rel="noreferrer" onClick={() => {
+                    <a href="https://github.com/ran-j/PS2Recomp" target="_blank" rel="noreferrer" onClick={() => {
                       const update = repoUpdates.ps2;
                       if (update) acknowledgeRepository(update);
                     }}>
@@ -653,7 +659,7 @@ function App() {
                   </>
                 ) : generation === 'ps2' ? (
                   <>
-                    <div className="requirement"><Gamepad2 size={15} /><span><strong>OpenGOAL</strong> {t('ps2Req1')}</span></div>
+                    <div className="requirement"><Gamepad2 size={15} /><span><strong>PS2Recomp</strong> {t('ps2Req1')}</span></div>
                     <div className="requirement"><Info size={15} /><span>{t('ps2Req2')}</span></div>
                     <div className="requirement"><Disc3 size={15} /><span>{t('ps2Req3')}</span></div>
                   </>
@@ -694,10 +700,26 @@ function App() {
                         <span>{hasCue ? `${t('ps1CueFound')} · ${cueFiles.length}` : t('ps1CueMissing')}</span>
                       </div>
                     ) : generation === 'ps2' ? (
-                      <div className={`validation-item ${hasIso ? 'good' : 'bad'}`}>
-                        {hasIso ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                        <span>{hasIso ? `${t('ps2IsoFound')} · ${isoFiles.length}` : t('ps2IsoMissing')}</span>
-                      </div>
+                      <>
+                        <div className={`validation-item ${hasElf ? 'good' : 'bad'}`}>
+                          {hasElf ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                          <span>{hasElf ? t('ps2ElfFound') : t('ps2ElfMissing')}</span>
+                        </div>
+                        <div className={`validation-item ${hasPs2Config ? 'good' : 'bad'}`}>
+                          {hasPs2Config ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                          <span>{hasPs2Config ? t('ps2ConfigFound') : t('ps2ConfigMissing')}</span>
+                        </div>
+                        <div className="validation-item">
+                          {hasPs2FunctionMap ? <CheckCircle2 size={14} /> : <Info size={14} />}
+                          <span>{hasPs2FunctionMap ? t('ps2MapSelected') : t('ps2MapRecommended')}</span>
+                        </div>
+                        {hasIso && (
+                          <div className="validation-item">
+                            <Disc3 size={14} />
+                            <span>{t('ps2IsoGrouped')} · {isoFiles.length}</span>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <>
                         <div className={`validation-item ${hasElf ? 'good' : 'bad'}`}>
@@ -808,7 +830,7 @@ function App() {
             <p className="modal-copy">{t('aboutCopy')}</p>
             <div className="modal-points">
               <div className="modal-point"><Disc3 size={15} /><span><strong>PSXRecomp:</strong> {t('ps1About')}</span></div>
-              <div className="modal-point"><Gamepad2 size={15} /><span><strong>OpenGOAL:</strong> {t('ps2About')}</span></div>
+              <div className="modal-point"><Gamepad2 size={15} /><span><strong>PS2Recomp:</strong> {t('ps2About')}</span></div>
               <div className="modal-point"><Monitor size={15} /><span><strong>PS3Recomp:</strong> {t('ps3About')}</span></div>
               <div className="modal-point"><FileCode2 size={15} /><span><strong>AnyPS5:</strong> {t('ps5About')}</span></div>
               <div className="modal-point"><LockKeyhole size={15} /><span>{t('privacyAbout')}</span></div>

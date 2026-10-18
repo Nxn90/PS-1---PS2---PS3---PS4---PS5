@@ -12,7 +12,7 @@ export const generationCatalog = [
   {
     id: 'ps2',
     title: 'PlayStation 2',
-    adapter: 'OpenGOAL',
+    adapter: 'PS2Recomp',
     enabled: true,
     badge: 'ps2Badge',
     scope: 'scopePs2',

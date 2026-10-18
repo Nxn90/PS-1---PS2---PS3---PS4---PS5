@@ -1,1 +1,1 @@
-- [PlayStation generation scope](playstation-generation-scope.md) — keep PS1/PS5 selectable; enable PS2 only after a usable workflow is verified, and leave PS3/PS4 grey.
+- [PlayStation generation scope](playstation-generation-scope.md) — PS2Recomp is experimental and ELF-based; keep PS3/PS4 unavailable until integrated workflows are verified.
