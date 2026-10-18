@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("recompHub", {
   isDesktop: true,
   chooseInput: (generation) => ipcRenderer.invoke("hub:choose-input", generation),
+  validatePs1DiscSet: (paths) => ipcRenderer.invoke("hub:validate-ps1-disc-set", paths),
   chooseFolder: (purpose) => ipcRenderer.invoke("hub:choose-folder", purpose),
   configurePs5Tool: () => ipcRenderer.invoke("hub:configure-ps5-tool"),
   getToolStatus: () => ipcRenderer.invoke("hub:get-tool-status"),

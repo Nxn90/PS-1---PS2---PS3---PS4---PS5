@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -43,6 +43,13 @@ function createWindow() {
     window.loadURL(process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173");
   }
 
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://github.com/")) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
   window.on("closed", () => {
     const processForWindow = runningProcesses.get(window.webContents.id);
     if (processForWindow) processForWindow.kill();
@@ -50,38 +57,83 @@ function createWindow() {
   });
 }
 
-ipcMain.handle("hub:choose-input", async (_event, generation) => {
+ipcMain.handle("hub:choose-input", async (_event, generation, language = "en") => {
+  const isArabic = language === "ar";
   const filtersByGeneration = {
-    ps1: [{ name: "PS1 cue sheet", extensions: ["cue"] }],
-    ps5: [{ name: "PS5 ELF executable", extensions: ["elf"] }],
+    ps1: [{ name: isArabic ? "ملفات قرص PS1" : "PS1 CUE files", extensions: ["cue"] }],
+    ps2: [{ name: isArabic ? "صور أقراص PS2" : "PS2 disc images", extensions: ["iso"] }],
+    ps5: [{ name: isArabic ? "ملف PS5 ELF" : "PS5 ELF executable", extensions: ["elf"] }],
   };
   const filters = filtersByGeneration[generation];
   if (!filters) throw new Error("This generation is not available.");
 
   const result = await dialog.showOpenDialog({
-    properties: ["openFile"],
+    properties: generation === "ps5" ? ["openFile"] : ["openFile", "multiSelections"],
     filters,
+    title: isArabic ? "اختر ملفات المشروع" : "Select project files",
   });
-  return result.canceled ? null : result.filePaths[0];
+  return result.canceled ? null : result.filePaths;
 });
 
-ipcMain.handle("hub:choose-folder", async (_event, purpose) => {
+ipcMain.handle("hub:validate-ps1-disc-set", async (_event, paths) => {
+  if (!Array.isArray(paths) || paths.length < 1 || paths.length > 32) {
+    throw new Error("Choose between 1 and 32 PS1 CUE files.");
+  }
+
+  for (const selectedPath of paths) {
+    if (typeof selectedPath !== "string" || path.extname(selectedPath).toLowerCase() !== ".cue") {
+      throw new Error("The PS1 disc set must contain CUE files.");
+    }
+    const cuePath = path.resolve(selectedPath);
+    const cueStat = await fs.stat(cuePath);
+    if (!cueStat.isFile() || cueStat.size > 1024 * 1024) {
+      throw new Error("A CUE file is invalid or too large to inspect.");
+    }
+
+    const cueText = await fs.readFile(cuePath, "utf8");
+    const referencedFiles = [...cueText.matchAll(/^\s*FILE\s+(?:"([^"]+)"|(\S+))/gim)]
+      .map((match) => match[1] || match[2])
+      .filter(Boolean);
+    if (referencedFiles.length === 0) {
+      throw new Error(`No FILE tracks were found in ${path.basename(cuePath)}.`);
+    }
+
+    const cueDirectory = path.dirname(cuePath);
+    for (const reference of referencedFiles) {
+      const referencedPath = path.resolve(cueDirectory, reference);
+      const relative = path.relative(cueDirectory, referencedPath);
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error(`A track reference in ${path.basename(cuePath)} points outside its disc folder.`);
+      }
+      const referencedStat = await fs.stat(referencedPath).catch(() => null);
+      if (!referencedStat?.isFile()) {
+        throw new Error(`A track referenced by ${path.basename(cuePath)} was not found.`);
+      }
+    }
+  }
+
+  return { ok: true, discCount: paths.length };
+});
+
+ipcMain.handle("hub:choose-folder", async (_event, purpose, language = "en") => {
   if (!["output", "modules"].includes(purpose)) {
     throw new Error("Unsupported folder selection.");
   }
 
   const result = await dialog.showOpenDialog({
     properties: ["openDirectory", "createDirectory"],
-    title: purpose === "output" ? "Choose output folder" : "Choose module parent folder",
+    title: language === "ar"
+      ? purpose === "output" ? "اختر مجلد الإخراج" : "اختر المجلد الأب للوحدات"
+      : purpose === "output" ? "Choose output folder" : "Choose module parent folder",
   });
   return result.canceled ? null : result.filePaths[0];
 });
 
-ipcMain.handle("hub:configure-ps5-tool", async () => {
+ipcMain.handle("hub:configure-ps5-tool", async (_event, language = "en") => {
   const result = await dialog.showOpenDialog({
     properties: ["openFile"],
     filters: [{ name: "Windows executable", extensions: ["exe"] }],
-    title: "Select the AnyPS5 relinker executable",
+    title: language === "ar" ? "اختر أداة AnyPS5 لإعادة الربط" : "Select the AnyPS5 relinker executable",
   });
   if (result.canceled) return null;
 

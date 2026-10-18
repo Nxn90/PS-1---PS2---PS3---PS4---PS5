@@ -1,17 +1,32 @@
 # PlayStation Recomp Hub
 
-An Arabic-first Windows desktop companion for generation-specific PlayStation
-recompilation workflows. The browser preview validates the interface only; it
+An Arabic/English Windows desktop companion for generation-specific PlayStation
+recompilation projects. The browser preview validates the interface only; it
 does not execute native conversion tools.
 
 ## Current adapter boundaries
 
-- **PS1:** PSXRecomp is a game-project framework. It does not convert every disc
-  image to a finished native Windows game in one click.
-- **PS5:** AnyPS5 can run its Windows relinker on a prepared ELF and module
-  directory. It does not accept an ordinary retail PKG directly.
-- **PS2, PS3, PS4:** intentionally unavailable until a supported workflow is
-  integrated and verified.
+- **PS1:** [PSXRecomp](https://github.com/RetroPortingToolKit/psxrecomp) is a
+  general static-recompilation framework, but each game still needs a configured
+  project. The app can select multiple CUE discs and check their referenced
+  track files; it does not merge disc images or build an arbitrary game.
+- **PS2:** [OpenGOAL](https://github.com/open-goal/jak-project) targets the
+  Jak & Daxter series only. The app can group ISO inputs and link to the project
+  instructions, but it does not run OpenGOAL or turn arbitrary PS2 ISOs into EXEs.
+- **PS3:** [PS3Recomp](https://github.com/sp00nznet/ps3recomp) is tracked as an
+  upstream toolkit, but is not integrated as a general-purpose converter.
+- **PS5:** [AnyPS5](https://github.com/boykopovar/AnyPS5) can run its Windows
+  relinker on a prepared ELF and module directory. It does not accept an
+  ordinary retail PKG directly.
+- **PS4:** unavailable until a supported workflow is integrated and verified.
+
+The app checks the latest public GitHub commit for the four tracked repositories
+on startup and every 15 minutes. It reports upstream changes in the UI; it does
+not automatically download or execute upstream code.
+
+Selecting multiple discs keeps them together as one input set. It does not
+concatenate or modify copyrighted disc files. Actual multi-disc support depends
+on the selected game's own recompilation project.
 
 The app does not include game files, BIOS, firmware, encryption keys, or
 third-party recompilers. The desktop shell asks the user to select local tools

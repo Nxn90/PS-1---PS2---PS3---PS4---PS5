@@ -4,9 +4,10 @@ declare global {
   interface Window {
     recompHub?: {
       isDesktop: true;
-      chooseInput: (generation: "ps1" | "ps5") => Promise<string | null>;
-      chooseFolder: (purpose: "output" | "modules") => Promise<string | null>;
-      configurePs5Tool: () => Promise<string | null>;
+      chooseInput: (generation: "ps1" | "ps2" | "ps5", language: "ar" | "en") => Promise<string[] | null>;
+      validatePs1DiscSet: (paths: string[]) => Promise<{ ok: boolean; discCount: number }>;
+      chooseFolder: (purpose: "output" | "modules", language: "ar" | "en") => Promise<string | null>;
+      configurePs5Tool: (language: "ar" | "en") => Promise<string | null>;
       getToolStatus: () => Promise<{
         platform: string;
         packaged: boolean;

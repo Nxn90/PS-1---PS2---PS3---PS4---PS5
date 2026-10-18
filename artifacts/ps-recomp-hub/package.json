@@ -2,7 +2,7 @@
   "name": "@workspace/ps-recomp-hub",
   "version": "0.0.0",
   "private": true,
-  "description": "Arabic-first desktop companion for PlayStation recompilation workflows",
+  "description": "Arabic and English desktop companion for PlayStation recompilation projects",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
