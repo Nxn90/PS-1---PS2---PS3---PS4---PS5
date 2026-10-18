@@ -65,13 +65,17 @@ ipcMain.handle("hub:choose-input", async (_event, generation, language = "en") =
       name: isArabic ? "ملفات مشروع PS2Recomp" : "PS2Recomp project files",
       extensions: ["elf", "toml", "csv", "iso"],
     }],
+    ps3: [{
+      name: isArabic ? "ملف ELF مفكوك التشفير للعبة PS3" : "Decrypted PS3 game ELF",
+      extensions: ["elf"],
+    }],
     ps5: [{ name: isArabic ? "ملف PS5 ELF" : "PS5 ELF executable", extensions: ["elf"] }],
   };
   const filters = filtersByGeneration[generation];
   if (!filters) throw new Error("This generation is not available.");
 
   const result = await dialog.showOpenDialog({
-    properties: generation === "ps5" ? ["openFile"] : ["openFile", "multiSelections"],
+    properties: generation === "ps5" || generation === "ps3" ? ["openFile"] : ["openFile", "multiSelections"],
     filters,
     title: isArabic ? "اختر ملفات المشروع" : "Select project files",
   });

@@ -169,7 +169,9 @@ function App() {
     ? hasCue
     : generation === 'ps2'
       ? hasElf && hasPs2Config
-      : hasElf && hasModule && !hasPkg;
+      : generation === 'ps3'
+        ? hasElf
+        : hasElf && hasModule && !hasPkg;
   const isBlocked = checked && !isReady;
   const title = activeGenerationInfo[generation];
 
@@ -330,6 +332,11 @@ function App() {
       return;
     }
 
+    if (generation === 'ps3') {
+      setMessage(t('ps3NoRunner'));
+      return;
+    }
+
     if (!desktop) {
       setNativeNotice(true);
       return;
@@ -412,12 +419,16 @@ function App() {
     ? '.cue,.bin'
     : generation === 'ps2'
       ? '.elf,.toml,.csv,.iso'
-      : '.elf,.prx,.pkg';
+      : generation === 'ps3'
+        ? '.elf'
+        : '.elf,.prx,.pkg';
   const dropHintKey: TranslationKey = generation === 'ps1'
     ? 'ps1DropHint'
     : generation === 'ps2'
       ? 'ps2DropHint'
-      : 'ps5DropHint';
+      : generation === 'ps3'
+        ? 'ps3DropHint'
+        : 'ps5DropHint';
   const runLabel = running
     ? t('runningTool')
     : desktop && generation === 'ps5' && toolStatus?.ps5RelinkerReady
@@ -426,7 +437,9 @@ function App() {
         ? t('inspectPs1')
         : generation === 'ps2'
           ? t('inspectPs2')
-          : t('checkInputs');
+          : generation === 'ps3'
+            ? t('inspectPs3')
+            : t('checkInputs');
 
   const repoTitle: Record<RepositoryUpdate['id'], TranslationKey> = repoTitleKeys;
   const repoScope: Record<RepositoryUpdate['id'], TranslationKey> = repoScopeKeys;
@@ -535,7 +548,7 @@ function App() {
                 ref={fileInputRef}
                 className="file-input"
                 type="file"
-                multiple
+                multiple={generation !== 'ps3'}
                 accept={acceptedFiles}
                 aria-label={t('inputFileLabel')}
                 data-testid="input-project-files"
@@ -647,9 +660,25 @@ function App() {
                 </div>
               )}
 
+              {generation === 'ps3' && (
+                <div className="scope-callout ps2-callout" data-testid="notice-ps3-scope">
+                  <Monitor size={18} />
+                  <div>
+                    <strong>{t('ps3ScopeTitle')}</strong>
+                    <p>{t('ps3Scope')}</p>
+                    <a href="https://github.com/sp00nznet/ps3recomp" target="_blank" rel="noreferrer" onClick={() => {
+                      const update = repoUpdates.ps3;
+                      if (update) acknowledgeRepository(update);
+                    }}>
+                      {t('openPs3Project')} <ExternalLink size={13} />
+                    </a>
+                  </div>
+                </div>
+              )}
+
               <div className="toast-live" role="status" aria-live="polite" data-testid="status-file-message">{message}</div>
               <div className="rule-divider" />
-              <h3 className="requirements-heading">{generation === 'ps1' ? t('ps1ReqTitle') : generation === 'ps2' ? t('ps2ReqTitle') : t('ps5ReqTitle')}</h3>
+              <h3 className="requirements-heading">{generation === 'ps1' ? t('ps1ReqTitle') : generation === 'ps2' ? t('ps2ReqTitle') : generation === 'ps3' ? t('ps3ReqTitle') : t('ps5ReqTitle')}</h3>
               <div className="requirements">
                 {generation === 'ps1' ? (
                   <>
@@ -662,6 +691,12 @@ function App() {
                     <div className="requirement"><Gamepad2 size={15} /><span><strong>PS2Recomp</strong> {t('ps2Req1')}</span></div>
                     <div className="requirement"><Info size={15} /><span>{t('ps2Req2')}</span></div>
                     <div className="requirement"><Disc3 size={15} /><span>{t('ps2Req3')}</span></div>
+                  </>
+                ) : generation === 'ps3' ? (
+                  <>
+                    <div className="requirement"><FileCode2 size={15} /><span><strong>PS3Recomp</strong> {t('ps3Req1')}</span></div>
+                    <div className="requirement"><Info size={15} /><span>{t('ps3Req2')}</span></div>
+                    <div className="requirement"><AlertCircle size={15} /><span>{t('ps3Req3')}</span></div>
                   </>
                 ) : (
                   <>
@@ -720,6 +755,11 @@ function App() {
                           </div>
                         )}
                       </>
+                    ) : generation === 'ps3' ? (
+                      <div className={`validation-item ${hasElf ? 'good' : 'bad'}`}>
+                        {hasElf ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                        <span>{hasElf ? t('ps3ElfFound') : t('ps3ElfMissing')}</span>
+                      </div>
                     ) : (
                       <>
                         <div className={`validation-item ${hasElf ? 'good' : 'bad'}`}>
