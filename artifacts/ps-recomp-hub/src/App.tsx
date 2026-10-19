@@ -39,7 +39,18 @@ import { translate, type Language, type TranslationKey } from './lib/i18n';
 type Generation = ActiveGeneration;
 type LocalFile = { id: string; name: string; size?: number; file?: File; path?: string };
 type NativePaths = { sourcePath: string | null; moduleParentPath: string | null; outputDirectory: string | null };
-type ToolStatus = { platform: string; packaged: boolean; ps5RelinkerPath: string | null; ps5RelinkerReady: boolean };
+type ToolStatus = {
+  platform: string;
+  packaged: boolean;
+  ps5RelinkerPath: string | null;
+  ps5RelinkerReady: boolean;
+  ps5LibrariesPath: string | null;
+  ps5LibrariesReady: boolean;
+  ps5RuntimeDllPath: string | null;
+  ps5RuntimeReady: boolean;
+  ps5ToolVersion: string | null;
+};
+type ToolProgress = { phase: string; asset?: string; percent: number };
 
 const emptyNativePaths: NativePaths = { sourcePath: null, moduleParentPath: null, outputDirectory: null };
 const repoTitleKeys: Record<RepositoryUpdate['id'], TranslationKey> = {
@@ -88,6 +99,8 @@ function App() {
   const [toolStatus, setToolStatus] = useState<ToolStatus | null>(null);
   const [nativePaths, setNativePaths] = useState<NativePaths>(emptyNativePaths);
   const [running, setRunning] = useState(false);
+  const [installingPs5Tools, setInstallingPs5Tools] = useState(false);
+  const [toolProgress, setToolProgress] = useState<ToolProgress | null>(null);
   const [toolLogs, setToolLogs] = useState<string[]>([]);
   const [repoUpdates, setRepoUpdates] = useState<Record<string, RepositoryUpdate>>({});
   const [lastChecked, setLastChecked] = useState<number | null>(null);
@@ -122,7 +135,7 @@ function App() {
     void bridge.getToolStatus().then(setToolStatus).catch(() => {
       setMessage(translate(language, 'configureError'));
     });
-    return bridge.onToolOutput(({ stream, text }) => {
+    const removeOutputListener = bridge.onToolOutput(({ stream, text }) => {
       const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length === 0) return;
       setToolLogs((current) => [
@@ -130,6 +143,11 @@ function App() {
         ...lines.map((line) => `${stream === 'stderr' ? '!' : '›'} ${line}`),
       ].slice(-160));
     });
+    const removeProgressListener = bridge.onToolProgress(setToolProgress);
+    return () => {
+      removeOutputListener();
+      removeProgressListener();
+    };
   }, []);
 
   useEffect(() => {
@@ -291,6 +309,25 @@ function App() {
     }
   }
 
+  async function installPs5Toolchain() {
+    const bridge = window.recompHub;
+    if (!bridge?.isDesktop || installingPs5Tools) return;
+    setInstallingPs5Tools(true);
+    setToolProgress({ phase: 'release', percent: 0 });
+    setMessage('');
+    try {
+      setToolStatus(await bridge.installPs5Tools());
+      setToolProgress({ phase: 'complete', percent: 100 });
+      setMessage(t('toolInstallSuccess'));
+    } catch (error) {
+      setToolProgress({ phase: 'error', percent: 0 });
+      setMessage(error instanceof Error ? error.message : t('toolInstallError'));
+    } finally {
+      setInstallingPs5Tools(false);
+      setToolStatus(await bridge.getToolStatus().catch(() => toolStatus));
+    }
+  }
+
   async function checkCueReferences() {
     if (desktop) {
       const bridge = window.recompHub;
@@ -355,8 +392,8 @@ function App() {
       setMessage(t('outputNeeded'));
       return;
     }
-    if (!toolStatus?.ps5RelinkerReady) {
-      setMessage(t('toolNeeded'));
+    if (!toolStatus?.ps5RelinkerReady || !toolStatus.ps5LibrariesReady || !toolStatus.ps5RuntimeReady) {
+      setMessage(t('toolBundleNeeded'));
       return;
     }
 
@@ -371,7 +408,7 @@ function App() {
         outputDirectory: nativePaths.outputDirectory,
       });
       if (result.ok) {
-        setMessage(`${t('runSuccess')} ${result.outputPath}`);
+        setMessage(`${result.resourcesIncluded ? t('runSuccess') : t('runSuccessWithoutAssets')} ${result.outputPath}`);
       } else if (result.cancelled) {
         setMessage(t('runCancelled'));
       } else {
@@ -431,7 +468,7 @@ function App() {
         : 'ps5DropHint';
   const runLabel = running
     ? t('runningTool')
-    : desktop && generation === 'ps5' && toolStatus?.ps5RelinkerReady
+    : desktop && generation === 'ps5' && toolStatus?.ps5RelinkerReady && toolStatus.ps5LibrariesReady && toolStatus.ps5RuntimeReady
       ? t('runPs5')
       : generation === 'ps1'
         ? t('inspectPs1')
