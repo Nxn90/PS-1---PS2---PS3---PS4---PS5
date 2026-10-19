@@ -175,7 +175,16 @@ button.generation-card:not(:disabled):hover { transform: translateY(-2px); borde
 .desktop-control-meta { display: grid; min-width: 0; gap: 3px; text-align: right; }
 .desktop-control-meta strong { color: #455d74; font-size: 10px; }
 .desktop-control-meta span { overflow: hidden; color: #7c8d9d; font-family: var(--app-font-mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; direction: ltr; text-align: right; }
+.desktop-tool-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .secondary-select { flex: 0 0 auto; padding: 7px 10px; font-size: 10px; box-shadow: none; }
+.secondary-select:disabled { cursor: wait; opacity: .65; }
+.tool-integrity { display: grid; gap: 4px; padding: 7px 8px; border: 1px solid #dce7ed; border-radius: 8px; color: #63798e; font-size: 9px; overflow-wrap: anywhere; }
+.tool-integrity strong { color: #547b62; }
+.tool-integrity code { direction: ltr; font: 8px var(--app-font-mono); overflow-wrap: anywhere; }
+.tool-release-link { display: inline-flex; align-items: center; gap: 5px; width: fit-content; color: #3570a7; font-size: 9px; text-decoration: none; }
+.tool-release-link:hover { text-decoration: underline; }
+.tool-install-progress { display: grid; gap: 5px; color: #6d8295; font-size: 9px; }
+.tool-install-progress progress { width: 100%; height: 7px; accent-color: #3e86c6; }
 .desktop-controls-note { margin: 0; color: #8694a1; font-size: 9px; line-height: 1.7; }
 .file-row { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 10px 12px; background: #f5f8fa; border: 1px solid #e1e8ed; border-radius: 10px; }
 .file-icon { width: 32px; height: 34px; display: grid; place-items: center; flex: 0 0 32px; background: #e6eff6; color: #3e6e98; border-radius: 8px; }
@@ -342,6 +351,10 @@ button.generation-card:not(:disabled):hover { border-color: #4676a7; }
 .desktop-controls { border-color: #2a3b4d; background: #121e2c; }
 .desktop-control-meta strong { color: #c6d4e2; }
 .desktop-control-meta span { color: #91a5b8; }
+.tool-integrity { border-color: #2c4155; background: #101a26; color: #91a4b8; }
+.tool-integrity strong { color: #a6d0b4; }
+.tool-release-link { color: #91c6f6; }
+.tool-install-progress { color: #a7b7c8; }
 .desktop-controls-note { color: #8d9dad; }
 .secondary-select { background: #26384b; color: #d8e5f1; }
 .secondary-select:hover { background: #334d67; }
@@ -574,6 +587,8 @@ html[dir="ltr"] .repository-actions { direction: ltr; }
   .repository-refresh-area { width: 100%; justify-content: space-between; }
   .repository-grid { gap: 7px; }
   .repository-card { padding: 9px 8px; }
+  .desktop-tool-actions { width: 100%; }
+  .desktop-tool-actions button { flex: 1 1 auto; }
   .last-checked { font-size: 7px; }
   .footer { align-items: flex-start; flex-direction: column; }
 }

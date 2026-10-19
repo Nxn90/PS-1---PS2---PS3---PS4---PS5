@@ -1,10 +1,27 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
+const { createWriteStream } = require("node:fs");
 const fs = require("node:fs/promises");
+const { createHash } = require("node:crypto");
 const path = require("node:path");
+const { Readable, Transform } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
+const {
+  inspectWindowsX64Pe,
+  isPathInside,
+  officialReleaseApi,
+  selectWindowsReleaseAsset,
+  sha256File,
+} = require("./anyps5-release.cjs");
 
 const configPath = () => path.join(app.getPath("userData"), "tools.json");
 const runningProcesses = new Map();
+const installingPs5Tools = new Set();
+const githubHeaders = {
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
+  "User-Agent": "PlayStation-Recomp-Hub",
+};
 
 async function readToolConfig() {
   try {
@@ -19,6 +36,248 @@ async function writeToolConfig(config) {
   const target = configPath();
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, JSON.stringify(config, null, 2), "utf8");
+}
+
+function sendInstallProgress(event, progress) {
+  event.sender.send("hub:ps5-install-progress", progress);
+}
+
+async function runPowerShellExtract(archivePath, destinationPath) {
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    "Expand-Archive -LiteralPath $env:ANYPS5_ARCHIVE -DestinationPath $env:ANYPS5_DESTINATION",
+  ].join("; ");
+
+  await new Promise((resolve, reject) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+      {
+        windowsHide: true,
+        shell: false,
+        env: {
+          ...process.env,
+          ANYPS5_ARCHIVE: archivePath,
+          ANYPS5_DESTINATION: destinationPath,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let output = "";
+    child.stdout.on("data", (chunk) => { output = `${output}${chunk.toString("utf8")}`.slice(-4000); });
+    child.stderr.on("data", (chunk) => { output = `${output}${chunk.toString("utf8")}`.slice(-4000); });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Could not extract the verified AnyPS5 release${output ? `: ${output.trim()}` : "."}`));
+    });
+  });
+}
+
+async function findPs5Relinker(extractedPath) {
+  const matches = [];
+  const directories = [extractedPath];
+  let visited = 0;
+  while (directories.length > 0) {
+    const current = directories.pop();
+    const entries = await fs.readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      visited += 1;
+      if (visited > 20_000) throw new Error("The AnyPS5 release archive has too many entries.");
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        directories.push(entryPath);
+      } else if (entry.isFile() && entry.name.toLowerCase() === "relinker.exe") {
+        if (!isPathInside(extractedPath, entryPath)) {
+          throw new Error("The relinker path escaped the extracted AnyPS5 release folder.");
+        }
+        matches.push(entryPath);
+      }
+    }
+  }
+
+  if (matches.length !== 1) {
+    throw new Error(
+      matches.length === 0
+        ? "The verified AnyPS5 Windows release did not contain relinker.exe."
+        : "The verified AnyPS5 Windows release contained multiple relinker.exe files.",
+    );
+  }
+  return matches[0];
+}
+
+async function downloadWindowsReleaseAsset(event, asset, archivePath) {
+  const response = await fetch(asset.downloadUrl, {
+    headers: { Accept: "application/octet-stream", "User-Agent": "PlayStation-Recomp-Hub" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(10 * 60 * 1000),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`The official AnyPS5 download returned HTTP ${response.status}.`);
+  }
+
+  const finalUrl = new URL(response.url);
+  if (
+    finalUrl.protocol !== "https:" ||
+    !["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"].includes(finalUrl.hostname)
+  ) {
+    throw new Error("The AnyPS5 download redirected to an unexpected host.");
+  }
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && Number(contentLength) !== asset.size) {
+    throw new Error("The AnyPS5 release size does not match GitHub's release metadata.");
+  }
+
+  const hash = createHash("sha256");
+  let receivedBytes = 0;
+  let lastUpdate = 0;
+  const meter = new Transform({
+    transform(chunk, _encoding, callback) {
+      receivedBytes += chunk.length;
+      if (receivedBytes > asset.size) {
+        callback(new Error("The AnyPS5 download exceeded the published asset size."));
+        return;
+      }
+      hash.update(chunk);
+      const now = Date.now();
+      if (now - lastUpdate >= 250 || receivedBytes === asset.size) {
+        lastUpdate = now;
+        sendInstallProgress(event, {
+          phase: "downloading",
+          version: asset.tag,
+          receivedBytes,
+          totalBytes: asset.size,
+        });
+      }
+      callback(null, chunk);
+    },
+  });
+  await pipeline(
+    Readable.fromWeb(response.body),
+    meter,
+    createWriteStream(archivePath, { flags: "wx" }),
+  );
+  if (receivedBytes !== asset.size) {
+    throw new Error("The AnyPS5 download ended before the full release asset was received.");
+  }
+  const actualSha256 = hash.digest("hex");
+  if (actualSha256 !== asset.sha256) {
+    throw new Error("The AnyPS5 release SHA-256 did not match GitHub's published digest.");
+  }
+  return actualSha256;
+}
+
+async function getToolStatus(config) {
+  let executableReady = false;
+  let executableSha256 = null;
+  if (typeof config.ps5RelinkerPath === "string") {
+    try {
+      const inspection = await inspectWindowsX64Pe(config.ps5RelinkerPath);
+      executableSha256 = inspection.valid ? await sha256File(config.ps5RelinkerPath) : null;
+      executableReady =
+        inspection.valid &&
+        (!config.ps5RelinkerSha256 || executableSha256 === config.ps5RelinkerSha256);
+    } catch {
+      executableReady = false;
+    }
+  }
+
+  const ready = process.platform === "win32" && executableReady;
+  return {
+    platform: process.platform,
+    packaged: app.isPackaged,
+    ps5RelinkerPath: ready ? config.ps5RelinkerPath : null,
+    ps5RelinkerReady: ready,
+    ps5RelinkerOfficial: ready && config.ps5ToolSource === "official",
+    ps5ReleaseTag: ready ? config.ps5ReleaseTag ?? null : null,
+    ps5ReleaseUrl: ready ? config.ps5ReleaseUrl ?? null : null,
+    ps5ArchiveSha256: ready ? config.ps5ArchiveSha256 ?? null : null,
+    ps5RelinkerSha256: ready ? executableSha256 : null,
+  };
+}
+
+async function installOfficialPs5Tool(event) {
+  if (process.platform !== "win32") {
+    throw new Error("The official AnyPS5 Windows tool can only be installed in the Windows desktop app.");
+  }
+
+  const releaseResponse = await fetch(officialReleaseApi, {
+    headers: githubHeaders,
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!releaseResponse.ok) {
+    throw new Error(`Could not read the official AnyPS5 release metadata (HTTP ${releaseResponse.status}).`);
+  }
+  const release = await releaseResponse.json();
+  const asset = selectWindowsReleaseAsset(release);
+  sendInstallProgress(event, { phase: "preparing", version: asset.tag });
+
+  const config = await readToolConfig();
+  const currentStatus = await getToolStatus(config);
+  if (
+    currentStatus.ps5RelinkerReady &&
+    config.ps5ToolSource === "official" &&
+    config.ps5ReleaseTag === asset.tag &&
+    config.ps5ArchiveSha256 === asset.sha256
+  ) {
+    sendInstallProgress(event, { phase: "complete", version: asset.tag });
+    return currentStatus;
+  }
+
+  const installRoot = path.join(app.getPath("userData"), "AnyPS5");
+  await fs.mkdir(installRoot, { recursive: true });
+  const stagingPath = await fs.mkdtemp(path.join(installRoot, ".install-"));
+  const archivePath = path.join(stagingPath, asset.name);
+  const extractedPath = path.join(stagingPath, "extracted");
+
+  try {
+    await downloadWindowsReleaseAsset(event, asset, archivePath);
+    sendInstallProgress(event, { phase: "extracting", version: asset.tag });
+    await fs.mkdir(extractedPath);
+    await runPowerShellExtract(archivePath, extractedPath);
+
+    const stagedExecutablePath = await findPs5Relinker(extractedPath);
+    const inspection = await inspectWindowsX64Pe(stagedExecutablePath);
+    if (!inspection.valid) {
+      throw new Error("The relinker in the verified AnyPS5 release is not a valid Windows x64 executable.");
+    }
+    const relinkerSha256 = await sha256File(stagedExecutablePath);
+    const relativeExecutablePath = path.relative(extractedPath, stagedExecutablePath);
+    const installedPath = path.join(installRoot, `${asset.tag}-${asset.sha256.slice(0, 12)}`);
+    const finalExecutablePath = path.join(installedPath, relativeExecutablePath);
+
+    try {
+      await fs.lstat(installedPath);
+      const existingInspection = await inspectWindowsX64Pe(finalExecutablePath).catch(() => ({ valid: false }));
+      if (!existingInspection.valid || (await sha256File(finalExecutablePath)) !== relinkerSha256) {
+        throw new Error("An existing AnyPS5 install folder is present but does not match the verified release.");
+      }
+      await fs.rm(extractedPath, { recursive: true, force: true });
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      await fs.rename(extractedPath, installedPath);
+    }
+
+    const finalInspection = await inspectWindowsX64Pe(finalExecutablePath);
+    if (!finalInspection.valid || (await sha256File(finalExecutablePath)) !== relinkerSha256) {
+      throw new Error("The installed AnyPS5 executable failed its final integrity check.");
+    }
+
+    Object.assign(config, {
+      ps5RelinkerPath: finalExecutablePath,
+      ps5RelinkerSha256: relinkerSha256,
+      ps5ToolSource: "official",
+      ps5ReleaseTag: asset.tag,
+      ps5ReleaseUrl: asset.pageUrl,
+      ps5ArchiveSha256: asset.sha256,
+      ps5AssetName: asset.name,
+    });
+    await writeToolConfig(config);
+    sendInstallProgress(event, { phase: "complete", version: asset.tag });
+    return getToolStatus(config);
+  } finally {
+    await fs.rm(stagingPath, { recursive: true, force: true });
+  }
 }
 
 function createWindow() {
@@ -145,30 +404,37 @@ ipcMain.handle("hub:configure-ps5-tool", async (_event, language = "en") => {
   if (result.canceled) return null;
 
   const executablePath = result.filePaths[0];
+  const inspection = await inspectWindowsX64Pe(executablePath);
+  if (!inspection.valid) {
+    throw new Error("Choose a valid Windows x64 executable.");
+  }
   const config = await readToolConfig();
   config.ps5RelinkerPath = executablePath;
+  config.ps5RelinkerSha256 = await sha256File(executablePath);
+  config.ps5ToolSource = "custom";
+  delete config.ps5ReleaseTag;
+  delete config.ps5ReleaseUrl;
+  delete config.ps5ArchiveSha256;
+  delete config.ps5AssetName;
   await writeToolConfig(config);
   return executablePath;
 });
 
+ipcMain.handle("hub:install-official-ps5-tool", async (event) => {
+  if (installingPs5Tools.has(event.sender.id)) {
+    throw new Error("An AnyPS5 installation is already running.");
+  }
+  installingPs5Tools.add(event.sender.id);
+  try {
+    return await installOfficialPs5Tool(event);
+  } finally {
+    installingPs5Tools.delete(event.sender.id);
+  }
+});
+
 ipcMain.handle("hub:get-tool-status", async () => {
   const config = await readToolConfig();
-  let ps5RelinkerReady = false;
-  if (config.ps5RelinkerPath) {
-    try {
-      await fs.access(config.ps5RelinkerPath);
-      ps5RelinkerReady = true;
-    } catch {
-      ps5RelinkerReady = false;
-    }
-  }
-
-  return {
-    platform: process.platform,
-    packaged: app.isPackaged,
-    ps5RelinkerPath: ps5RelinkerReady ? config.ps5RelinkerPath : null,
-    ps5RelinkerReady,
-  };
+  return getToolStatus(config);
 });
 
 ipcMain.handle("hub:run-ps5-relinker", async (event, input) => {
@@ -215,7 +481,14 @@ ipcMain.handle("hub:run-ps5-relinker", async (event, input) => {
   if (!["sce_module", "sce_modules", "prx"].some((name) => moduleDirectoryNames.has(name))) {
     throw new Error("The selected module parent must contain a sce_module, sce_modules, or prx folder.");
   }
-  await fs.access(executablePath);
+  const toolInspection = await inspectWindowsX64Pe(executablePath);
+  if (!toolInspection.valid) {
+    throw new Error("The configured AnyPS5 relinker is not a valid Windows x64 executable.");
+  }
+  const currentToolSha256 = await sha256File(executablePath);
+  if (config.ps5RelinkerSha256 && currentToolSha256 !== config.ps5RelinkerSha256) {
+    throw new Error("The configured AnyPS5 relinker changed after verification. Reinstall or select it again.");
+  }
 
   const outputPath = path.join(
     outputDirectory,
@@ -256,12 +529,37 @@ ipcMain.handle("hub:run-ps5-relinker", async (event, input) => {
       runningProcesses.delete(event.sender.id);
       reject(new Error(`Could not start the relinker: ${error.message}`));
     });
-    child.once("close", (code, signal) => {
+    child.once("close", async (code, signal) => {
       runningProcesses.delete(event.sender.id);
       if (signal) {
         resolve({ ok: false, cancelled: true, outputPath });
       } else if (code === 0) {
-        resolve({ ok: true, outputPath });
+        try {
+          const output = await inspectWindowsX64Pe(outputPath);
+          if (!output.valid) {
+            await fs.rm(outputPath, { force: true });
+            resolve({
+              ok: false,
+              outputPath,
+              exitCode: 0,
+              message: "The relinker exited successfully but did not produce a valid Windows x64 executable.",
+            });
+            return;
+          }
+          resolve({
+            ok: true,
+            outputPath,
+            outputSize: output.size,
+            outputSha256: await sha256File(outputPath),
+          });
+        } catch (error) {
+          resolve({
+            ok: false,
+            outputPath,
+            exitCode: 0,
+            message: `The relinker exited successfully but the output file could not be verified: ${error.message}`,
+          });
+        }
       } else {
         resolve({
           ok: false,

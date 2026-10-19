@@ -18,14 +18,18 @@ does not execute native conversion tools.
   does not run the recompiler or turn ISO images directly into EXEs.
 - **PS3:** [PS3Recomp](https://github.com/sp00nznet/ps3recomp) is tracked as an
   upstream toolkit, but is not integrated as a general-purpose converter.
-- **PS5:** [AnyPS5](https://github.com/boykopovar/AnyPS5) can run its Windows
-  relinker on a prepared ELF and module directory. It does not accept an
-  ordinary retail PKG directly.
+- **PS5:** The Windows desktop app can download the latest stable
+  [AnyPS5](https://github.com/boykopovar/AnyPS5) release after the user requests
+  it. It checks the release ZIP's size and SHA-256 against GitHub's release
+  metadata before extracting the relinker, then checks the relinker executable's
+  Windows x64 PE structure and digest. A prepared ELF and module directory are
+  still required; an ordinary retail PKG is not a direct input.
 - **PS4:** unavailable until a supported workflow is integrated and verified.
 
 The app checks the latest public GitHub commit for the four tracked repositories
-on startup and every 15 minutes. It reports upstream changes in the UI; it does
-not automatically download or execute upstream code.
+on startup and every 15 minutes. It reports upstream changes in the UI; those
+checks do not automatically download or execute upstream code. The separate
+AnyPS5 installer only runs when the user presses its download button.
 
 Selecting multiple PS1 CUEs or PS2 ISOs keeps them together as one input set. It
 does not concatenate or modify disc files. For PS2, the images are not direct
@@ -33,11 +37,13 @@ PS2Recomp inputs; the tool starts from an ELF and project configuration. Actual
 multi-disc game support depends on that game's own recompilation project.
 
 The app does not include game files, BIOS, firmware, encryption keys, or
-third-party recompilers. The desktop shell asks the user to select local tools
-and files. The AnyPS5 tool must be obtained or built separately from its
-[upstream repository](https://github.com/boykopovar/AnyPS5); select its Windows
-relinker executable in the app. A successful relink does not guarantee that a
-game is fully portable or runnable without additional game-specific files.
+third-party recompilers. Downloaded AnyPS5 files are stored under the app's
+local user-data directory. The SHA-256 is read from GitHub's release API over
+HTTPS; it detects asset mismatch but is not a separate publisher signature.
+The app also permits selecting an existing Windows x64 relinker executable.
+After a successful relink, the app requires a non-empty Windows x64 PE output
+and displays its SHA-256. This does not guarantee that a game is fully portable
+or runnable without additional game-specific files.
 
 ## Run the browser preview
 

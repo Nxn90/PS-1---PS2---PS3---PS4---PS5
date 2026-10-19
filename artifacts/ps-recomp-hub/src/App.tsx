@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleHelp,
   Disc3,
+  Download,
   ExternalLink,
   FileCode2,
   FilePlus2,
@@ -39,7 +40,23 @@ import { translate, type Language, type TranslationKey } from './lib/i18n';
 type Generation = ActiveGeneration;
 type LocalFile = { id: string; name: string; size?: number; file?: File; path?: string };
 type NativePaths = { sourcePath: string | null; moduleParentPath: string | null; outputDirectory: string | null };
-type ToolStatus = { platform: string; packaged: boolean; ps5RelinkerPath: string | null; ps5RelinkerReady: boolean };
+type ToolStatus = {
+  platform: string;
+  packaged: boolean;
+  ps5RelinkerPath: string | null;
+  ps5RelinkerReady: boolean;
+  ps5RelinkerOfficial: boolean;
+  ps5ReleaseTag: string | null;
+  ps5ReleaseUrl: string | null;
+  ps5ArchiveSha256: string | null;
+  ps5RelinkerSha256: string | null;
+};
+type Ps5InstallProgress = {
+  phase: 'preparing' | 'downloading' | 'extracting' | 'complete';
+  version?: string;
+  receivedBytes?: number;
+  totalBytes?: number;
+};
 
 const emptyNativePaths: NativePaths = { sourcePath: null, moduleParentPath: null, outputDirectory: null };
 const repoTitleKeys: Record<RepositoryUpdate['id'], TranslationKey> = {
@@ -86,6 +103,7 @@ function App() {
   const [nativeNotice, setNativeNotice] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [toolStatus, setToolStatus] = useState<ToolStatus | null>(null);
+  const [installProgress, setInstallProgress] = useState<Ps5InstallProgress | null>(null);
   const [nativePaths, setNativePaths] = useState<NativePaths>(emptyNativePaths);
   const [running, setRunning] = useState(false);
   const [toolLogs, setToolLogs] = useState<string[]>([]);
@@ -122,7 +140,7 @@ function App() {
     void bridge.getToolStatus().then(setToolStatus).catch(() => {
       setMessage(translate(language, 'configureError'));
     });
-    return bridge.onToolOutput(({ stream, text }) => {
+    const removeOutputListener = bridge.onToolOutput(({ stream, text }) => {
       const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length === 0) return;
       setToolLogs((current) => [
@@ -130,6 +148,11 @@ function App() {
         ...lines.map((line) => `${stream === 'stderr' ? '!' : '›'} ${line}`),
       ].slice(-160));
     });
+    const removeInstallListener = bridge.onPs5InstallProgress(setInstallProgress);
+    return () => {
+      removeOutputListener();
+      removeInstallListener();
+    };
   }, []);
 
   useEffect(() => {
@@ -291,6 +314,21 @@ function App() {
     }
   }
 
+  async function installOfficialPs5Tool() {
+    const bridge = window.recompHub;
+    if (!bridge?.isDesktop) return;
+    setMessage('');
+    setInstallProgress({ phase: 'preparing' });
+    try {
+      setToolStatus(await bridge.installOfficialPs5Tool());
+      setMessage(t('installComplete'));
+    } catch {
+      setMessage(t('installFailed'));
+    } finally {
+      setInstallProgress(null);
+    }
+  }
+
   async function checkCueReferences() {
     if (desktop) {
       const bridge = window.recompHub;
@@ -371,7 +409,11 @@ function App() {
         outputDirectory: nativePaths.outputDirectory,
       });
       if (result.ok) {
-        setMessage(`${t('runSuccess')} ${result.outputPath}`);
+        const outputSummary = [
+          result.outputSize === undefined ? '' : `${t('outputSize')}: ${formatSize(result.outputSize)}`,
+          result.outputSha256 ? `${t('outputHash')}: ${result.outputSha256}` : '',
+        ].filter(Boolean).join(' · ');
+        setMessage(`${t('runSuccess')} ${result.outputPath}${outputSummary ? ` · ${outputSummary}` : ''}`);
       } else if (result.cancelled) {
         setMessage(t('runCancelled'));
       } else {
@@ -488,7 +530,7 @@ function App() {
               <p className="intro-copy">{t('intro')}</p>
             </div>
             <div className="adapter-count">
-              <strong>{String(generationCatalog.filter((entry) => entry.enabled).length).padStart(2, '0')}</strong>
+              <strong>{String(generationCatalog.filter((entry) => entry.integrated).length).padStart(2, '0')}</strong>
               <span>/ 05 · {t('readyCount')}</span>
             </div>
           </section>
@@ -601,7 +643,7 @@ function App() {
                       : `${discFiles.length > 1 ? t('multipleDiscs') : t('oneDisc')} · ${discFiles.length} ${t('discCount')}`}</span>
                   </div>
                   <span className={`disc-count ${discFiles.length > 1 ? 'multiple' : ''}`}>{String(discFiles.length).padStart(2, '0')}</span>
-                  <p className="disc-set-note">{t('discSetNote')}</p>
+                   <p className="disc-set-note">{generation === 'ps1' ? t('ps1DiscSetNote') : t('ps2DiscSetNote')}</p>
                 </div>
               )}
 
@@ -611,13 +653,62 @@ function App() {
                     <div className="desktop-control-meta">
                       <strong>{t('anyps5Tool')}</strong>
                       <span title={toolStatus?.ps5RelinkerPath ?? ''}>
-                        {toolStatus?.ps5RelinkerReady ? basename(toolStatus.ps5RelinkerPath!) : t('noRelinker')}
+                        {toolStatus?.ps5RelinkerReady
+                          ? toolStatus.ps5ReleaseTag ?? basename(toolStatus.ps5RelinkerPath!)
+                          : t('noRelinker')}
                       </span>
                     </div>
-                    <button className="select-button secondary-select" type="button" data-testid="button-configure-ps5-tool" onClick={() => void configurePs5Tool()}>
-                      <FilePlus2 size={14} /> {t('configureTool')}
-                    </button>
+                    <div className="desktop-tool-actions">
+                      <button
+                        className="select-button secondary-select"
+                        type="button"
+                        disabled={Boolean(installProgress)}
+                        data-testid="button-install-official-ps5-tool"
+                        onClick={() => void installOfficialPs5Tool()}
+                      >
+                        <Download size={14} /> {installProgress ? t('updatingOfficialTool') : t('installOfficialTool')}
+                      </button>
+                      <button className="select-button secondary-select custom-tool-button" type="button" data-testid="button-configure-ps5-tool" onClick={() => void configurePs5Tool()}>
+                        <FilePlus2 size={14} /> {t('chooseCustomTool')}
+                      </button>
+                    </div>
                   </div>
+                  <p className="desktop-controls-note">{t('officialToolHint')}</p>
+                  {toolStatus?.ps5RelinkerReady && (
+                    <div className="tool-integrity" data-testid="status-ps5-tool-integrity">
+                      <strong>{toolStatus.ps5RelinkerOfficial ? t('officialToolReady') : t('customToolReady')}</strong>
+                      {toolStatus.ps5ArchiveSha256 && (
+                        <div><span>{t('releaseFingerprint')}: </span><code dir="ltr">{toolStatus.ps5ArchiveSha256}</code></div>
+                      )}
+                      {toolStatus.ps5RelinkerOfficial && toolStatus.ps5ReleaseUrl && (
+                        <a className="tool-release-link" href={toolStatus.ps5ReleaseUrl} target="_blank" rel="noreferrer">
+                          {t('releaseSource')} <ExternalLink size={12} />
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  {installProgress && (
+                    <div className="tool-install-progress" role="status" aria-live="polite" data-testid="status-ps5-install-progress">
+                      <span>
+                        {installProgress.phase === 'preparing'
+                          ? t('installPreparing')
+                          : installProgress.phase === 'extracting'
+                            ? t('installExtracting')
+                            : installProgress.phase === 'complete'
+                              ? t('installComplete')
+                              : `${t('installDownloading')} · ${installProgress.totalBytes
+                                ? Math.min(100, Math.round(((installProgress.receivedBytes ?? 0) / installProgress.totalBytes) * 100))
+                                : 0}%`}
+                      </span>
+                      {installProgress.phase === 'downloading' && installProgress.totalBytes !== undefined && (
+                        <progress
+                          max={installProgress.totalBytes}
+                          value={installProgress.receivedBytes ?? 0}
+                          aria-label={t('installDownloading')}
+                        />
+                      )}
+                    </div>
+                  )}
                   <div className="desktop-control-row">
                     <div className="desktop-control-meta">
                       <strong>{t('modulesFolder')}</strong>
@@ -641,6 +732,22 @@ function App() {
                     </button>
                   </div>
                   <p className="desktop-controls-note">{t('moduleFolderHint')}</p>
+                </div>
+              )}
+
+              {generation === 'ps1' && (
+                <div className="scope-callout ps2-callout" data-testid="notice-ps1-scope">
+                  <Disc3 size={18} />
+                  <div>
+                    <strong>{t('ps1ScopeTitle')}</strong>
+                    <p>{t('ps1Scope')}</p>
+                    <a href="https://github.com/RetroPortingToolKit/psxrecomp" target="_blank" rel="noreferrer" onClick={() => {
+                      const update = repoUpdates.ps1;
+                      if (update) acknowledgeRepository(update);
+                    }}>
+                      {t('openGithub')} <ExternalLink size={13} />
+                    </a>
+                  </div>
                 </div>
               )}
 
@@ -792,7 +899,7 @@ function App() {
               )}
 
               <button className={`run-button ${isReady ? 'valid' : ''}`} type="button" disabled={running} data-testid="button-check-files" onClick={() => void inspectPrerequisites()}>
-                <Play size={14} /> {runLabel}
+                {desktop && generation === 'ps5' ? <Play size={14} /> : <Info size={14} />} {runLabel}
               </button>
               {running && <button className="cancel-button" type="button" data-testid="button-cancel-run" onClick={() => void window.recompHub?.cancelRun()}>{t('cancel')}</button>}
               <div className="native-note"><LockKeyhole size={13} /><span>{desktop ? t('localPrivacyDesktop') : t('localPrivacyBrowser')}</span></div>

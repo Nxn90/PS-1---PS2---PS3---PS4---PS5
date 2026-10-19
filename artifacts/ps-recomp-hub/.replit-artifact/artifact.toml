@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "PlayStation Recomp Hub"
-description = "A Windows-oriented desktop companion for organizing legally prepared PlayStation game files and launching generation-specific recompilation tools. Starts with PS1 and PS5 adapter surfaces, keeps PS2/PS3/PS4 clearly unavailable until supported, and is structured for future Windows packaging."
+description = "A Windows-oriented desktop companion with an integrated AnyPS5 Windows relinker for prepared ELFs and module directories, GitHub SHA-256 verification, and checked PE outputs. PS1, PS2, and PS3 are reference-only paths; PS4 is unavailable."
 version = "1.0.0"
 id = "artifacts/ps-recomp-hub"
 router = "path"

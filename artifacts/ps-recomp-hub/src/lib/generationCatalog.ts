@@ -6,6 +6,7 @@ export const generationCatalog = [
     title: 'PlayStation 1',
     adapter: 'PSXRecomp',
     enabled: true,
+    integrated: false,
     badge: 'configuredProject',
     scope: 'scopePs1',
   },
@@ -14,6 +15,7 @@ export const generationCatalog = [
     title: 'PlayStation 2',
     adapter: 'PS2Recomp',
     enabled: true,
+    integrated: false,
     badge: 'ps2Badge',
     scope: 'scopePs2',
   },
@@ -22,7 +24,8 @@ export const generationCatalog = [
     title: 'PlayStation 3',
     adapter: 'PS3Recomp',
     enabled: true,
-    badge: 'ps3Experimental',
+    integrated: false,
+    badge: 'notIntegrated',
     scope: 'scopePs3',
   },
   {
@@ -30,6 +33,7 @@ export const generationCatalog = [
     title: 'PlayStation 4',
     adapter: '—',
     enabled: false,
+    integrated: false,
     badge: 'later',
     scope: 'ps4Unavailable',
   },
@@ -38,6 +42,7 @@ export const generationCatalog = [
     title: 'PlayStation 5',
     adapter: 'AnyPS5',
     enabled: true,
+    integrated: true,
     badge: 'requiresTool',
     scope: 'scopePs5',
   },
@@ -46,6 +51,7 @@ export const generationCatalog = [
   title: string;
   adapter: string;
   enabled: boolean;
+  integrated: boolean;
   badge: TranslationKey;
   scope: TranslationKey;
 }[];

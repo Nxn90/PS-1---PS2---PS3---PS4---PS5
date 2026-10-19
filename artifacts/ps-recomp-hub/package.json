@@ -12,6 +12,7 @@
     "desktop:dev": "concurrently -k \"cross-env BASE_PATH=/ PORT=5173 vite --config vite.config.ts --host 127.0.0.1\" \"wait-on tcp:5173 && electron .\"",
     "desktop:dir": "cross-env NODE_ENV=production BASE_PATH=./ PORT=5173 vite build --config vite.config.ts && electron-builder --dir",
     "desktop:win": "cross-env NODE_ENV=production BASE_PATH=./ PORT=5173 vite build --config vite.config.ts && electron-builder --win nsis --x64",
+    "test:electron": "node --test electron/*.test.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "build": {
@@ -24,6 +25,7 @@
     "files": [
       "dist/public/**/*",
       "electron/**/*",
+      "!electron/**/*.test.cjs",
       "package.json"
     ],
     "win": {
