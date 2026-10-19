@@ -1,0 +1,27 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build Windows app
+        run: pnpm run desktop:dir
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayStation-Recomp-Hub-Windows
+          path: release/win-unpacked/
