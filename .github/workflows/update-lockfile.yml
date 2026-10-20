@@ -17,3 +17,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Install and update lockfile
+        run: pnpm install --no-frozen-lockfile
+      - name: Commit lockfile if changed and open PR
+        env:
+          GH_TOKEN: ${{ secrets.REPO_WRITE_TOKEN }}
+        run: |
+          set -e
+          if git status --porcelain | grep -q "pnpm-lock.yaml"; then
+            BRANCH="chore/update-pnpm-lockfile-$(date +%s)"
+            git checkout -b "$BRANCH"
+            git add pnpm-lock.yaml
+            git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -m "chore: update pnpm lockfile"
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$BRANCH"
+            if command -v gh >/dev/null 2>&1; then
+              gh pr create --title "chore: update pnpm lockfile" --body "Updated pnpm lockfile via workflow." --base ci/allow-pnpm-update --head "$BRANCH"
+            else
+              PR_DATA=$(jq -n --arg title "chore: update pnpm lockfile" --arg head "$BRANCH" --arg base "ci/allow-pnpm-update" '{title: $title, head: $head, base: $base, body: "Updated pnpm lockfile"}')
+              curl -s -X POST -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${{ github.repository }}/pulls" -d "$PR_DATA"
+            fi
+            echo "PR created (or attempted)."
+          else
+            echo "pnpm-lock.yaml unchanged"
+          fi
