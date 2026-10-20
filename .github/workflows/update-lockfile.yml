@@ -1,0 +1,45 @@
+name: Update pnpm lockfile
+
+on:
+  push:
+    branches: [ci/allow-pnpm-update]
+
+jobs:
+  update-lock:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Install and update lockfile
+        run: pnpm install --no-frozen-lockfile
+      - name: Commit lockfile if changed and open PR
+        env:
+          GH_TOKEN: ${{ secrets.REPO_WRITE_TOKEN }}
+        run: |
+          set -e
+          if git status --porcelain | grep -q "pnpm-lock.yaml"; then
+            BRANCH="chore/update-pnpm-lockfile-$(date +%s)"
+            git checkout -b "$BRANCH"
+            git add pnpm-lock.yaml
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore: update pnpm lockfile to match overrides"
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:"$BRANCH"
+            if command -v gh >/dev/null 2>&1; then
+              gh pr create --title "chore: update pnpm lockfile to match overrides" --body "Regenerate pnpm-lock.yaml to match package overrides." --base main --head "$BRANCH"
+            else
+              PR_DATA=$(jq -n --arg title "chore: update pnpm lockfile to match overrides" --arg head "$BRANCH" --arg base "main" --arg body "Regenerate pnpm-lock.yaml to match package overrides." '{title:$title, head:$head, base:$base, body:$body}')
+              curl -s -X POST -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" https://api.github.com/repos/${{ github.repository }}/pulls -d "$PR_DATA"
+            fi
+            echo "PR created (or attempted)."
+          else
+            echo "pnpm-lock.yaml unchanged"
+          fi
