@@ -31,13 +31,13 @@ jobs:
             BRANCH="chore/update-pnpm-lockfile-$(date +%s)"
             git checkout -b "$BRANCH"
             git add pnpm-lock.yaml
-            git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -m "chore: update pnpm lockfile"
-            git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$BRANCH"
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "chore: update pnpm lockfile to match overrides"
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:"$BRANCH"
             if command -v gh >/dev/null 2>&1; then
-              gh pr create --title "chore: update pnpm lockfile" --body "Updated pnpm lockfile via workflow." --base ci/allow-pnpm-update --head "$BRANCH"
+              gh pr create --title "chore: update pnpm lockfile to match overrides" --body "Regenerate pnpm-lock.yaml to match package overrides." --base main --head "$BRANCH"
             else
-              PR_DATA=$(jq -n --arg title "chore: update pnpm lockfile" --arg head "$BRANCH" --arg base "ci/allow-pnpm-update" '{title: $title, head: $head, base: $base, body: "Updated pnpm lockfile"}')
-              curl -s -X POST -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${{ github.repository }}/pulls" -d "$PR_DATA"
+              PR_DATA=$(jq -n --arg title "chore: update pnpm lockfile to match overrides" --arg head "$BRANCH" --arg base "main" --arg body "Regenerate pnpm-lock.yaml to match package overrides." '{title:$title, head:$head, base:$base, body:$body}')
+              curl -s -X POST -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" https://api.github.com/repos/${{ github.repository }}/pulls -d "$PR_DATA"
             fi
             echo "PR created (or attempted)."
           else
