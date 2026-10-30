@@ -21,8 +21,8 @@ export const generationCatalog = [
     id: 'ps3',
     title: 'PlayStation 3',
     adapter: 'PS3Recomp',
-    enabled: true,
-    badge: 'ps3Experimental',
+    enabled: false,
+    badge: 'unavailable',
     scope: 'scopePs3',
   },
   {

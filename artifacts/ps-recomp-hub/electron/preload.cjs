@@ -5,7 +5,6 @@ contextBridge.exposeInMainWorld("recompHub", {
   chooseInput: (generation, language) => ipcRenderer.invoke("hub:choose-input", generation, language),
   validatePs1DiscSet: (paths) => ipcRenderer.invoke("hub:validate-ps1-disc-set", paths),
   chooseFolder: (purpose, language) => ipcRenderer.invoke("hub:choose-folder", purpose, language),
-  configurePs5Tool: (language) => ipcRenderer.invoke("hub:configure-ps5-tool", language),
   installPs5Tools: () => ipcRenderer.invoke("hub:install-ps5-tools"),
   getToolStatus: () => ipcRenderer.invoke("hub:get-tool-status"),
   runPs5Relinker: (input) => ipcRenderer.invoke("hub:run-ps5-relinker", input),
