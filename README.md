@@ -1,40 +1,40 @@
-# 🎮 PS CrossRecomp Hub
+# PS CrossRecomp Hub
 
+PS CrossRecomp Hub is a Windows desktop companion for genuine PlayStation-to-Windows recompilation projects. It does not use or launch emulators.
 
-**PS CrossRecomp Hub** is an all-in-one Windows desktop application designed to streamline and centralize static game recompilation and porting toolkits across multiple PlayStation generations. 
+## Current support
 
-Instead of managing multiple command-line tools and separate environments across different repositories, this hub provides a unified, intuitive interface to bridge and orchestrate them all in one place.
+| Platform | Status in this app |
+| --- | --- |
+| PS1 | Checks CUE/BIN disc input. PSXRecomp can recompile supported titles, but its per-game project and build workflow is not integrated here yet. |
+| PS2 | Experimental input inspection only. PS2Recomp needs a game ELF, game-specific configuration, often a Ghidra map, and a native runtime build; this app does not produce its EXE yet. |
+| PS3 | Unavailable until its decrypted-ELF recompilation and Windows build workflow is integrated and verified. |
+| PS4 | No integrated native recompilation tool. |
+| PS5 | Windows AnyPS5 relinking is integrated for prepared, clean ELF files with game modules and `app0` resources. The app can download the matching official relinker and Windows system libraries from GitHub and verify their SHA-256 digests. |
 
----
+PS5 retail/encrypted PKG files are not direct inputs. The user must supply a legally prepared ELF, its module folders, and an `app0` resource folder containing the original `eboot.bin`. AnyPS5 compatibility varies by title; an EXE is not proof that a game is fully playable.
 
-## 🛠️ Integrated Toolkits
+## Important: the two EXE files
 
-This hub integrates the following powerful open-source recompilation projects:
+`pnpm --filter @workspace/ps-recomp-hub run desktop:win` creates a Windows installer for the **Hub app**. That installer is not a converted PlayStation game.
 
-*   **PlayStation 1 (PS1):** Powered by [psxrecomp](https://github.com/RetroPortingToolKit/psxrecomp)
-*   **PlayStation 2 (PS2):** Powered by [PS2Recomp](https://github.com/ran-j/PS2Recomp)
-*   **PlayStation 3 (PS3):** Powered by [ps3recomp](https://github.com/sp00nznet/ps3recomp)
-*   **PlayStation 5 (PS5):** Powered by [AnyPS5](https://github.com/boykopovar/AnyPS5)
+The PS5 conversion action creates a game folder containing the Windows `.exe`, AnyPS5 system libraries, required Windows runtime DLLs, and the game’s `app0` resources. It is not a standalone EXE. The output is accepted only if the relinker exits successfully and the output has a valid Windows PE signature.
 
----
+## Run and build
 
-## ✨ Key Features
+- Replit browser preview: `pnpm --filter @workspace/ps-recomp-hub run dev`
+- Electron development app: `pnpm --filter @workspace/ps-recomp-hub run desktop:dev`
+- Windows Hub installer: `pnpm --filter @workspace/ps-recomp-hub run desktop:win`
+- Typecheck: `pnpm --filter @workspace/ps-recomp-hub run typecheck`
+- Production web preview build: `PORT=23654 BASE_PATH=/ pnpm --filter @workspace/ps-recomp-hub run build`
 
-*   **Unified Interface:** A clean, modern Windows dashboard for interacting with various console recompilation pipelines.
-*   **Centralized Workflow:** Manage source binaries, configuration files, and output builds from a single application window.
-*   **Cross-Gen Support:** Seamlessly switch between different target architectures ranging from classic PS1 titles up to modern PS5 recompilation workflows.
-*   **Streamlined Automation:** Simplifies argument passing, path mapping, and execution of underlying toolchain scripts.
+Native PS5 relinking runs only in the packaged Windows app. The browser preview does not run native tools.
 
----
+## Upstream projects
 
-## 🚀 Getting Started
+- [PSXRecomp](https://github.com/RetroPortingToolKit/psxrecomp)
+- [PS2Recomp](https://github.com/ran-j/PS2Recomp)
+- [PS3Recomp](https://github.com/sp00nznet/ps3recomp)
+- [AnyPS5](https://github.com/boykopovar/AnyPS5)
 
-1. Clone or download the repository.
-2. Ensure required toolchain dependencies and runtimes are installed on your Windows system.
-3. Launch the hub and select your target console generation to begin the recompilation process.
-
----
-
-## ⚠️ Disclaimer
-
-This project is a workflow wrapper and utility hub designed for educational, research, and preservation purposes. All integrated toolkits belong to their respective creators and maintainers.
+The Hub does not distribute games, firmware, decryption keys, or proprietary system files. Use only game files you are legally entitled to use.

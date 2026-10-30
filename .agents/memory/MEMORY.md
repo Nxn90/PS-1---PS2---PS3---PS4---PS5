@@ -1,1 +1,1 @@
-- [PlayStation generation scope](playstation-generation-scope.md) — PS2Recomp is experimental and ELF-based; keep PS3/PS4 unavailable until integrated workflows are verified.
+- [PlayStation generation scope](playstation-generation-scope.md) — Native recompilation only; PS2 is experimental, and PS3/PS4 stay unavailable until verified.

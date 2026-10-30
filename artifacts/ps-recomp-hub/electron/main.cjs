@@ -274,17 +274,13 @@ ipcMain.handle("hub:choose-input", async (_event, generation, language = "en") =
       name: isArabic ? "ملفات مشروع PS2Recomp" : "PS2Recomp project files",
       extensions: ["elf", "toml", "csv", "iso"],
     }],
-    ps3: [{
-      name: isArabic ? "ملف ELF مفكوك التشفير للعبة PS3" : "Decrypted PS3 game ELF",
-      extensions: ["elf"],
-    }],
     ps5: [{ name: isArabic ? "ملف PS5 ELF" : "PS5 ELF executable", extensions: ["elf"] }],
   };
   const filters = filtersByGeneration[generation];
   if (!filters) throw new Error("This generation is not available.");
 
   const result = await dialog.showOpenDialog({
-    properties: generation === "ps5" || generation === "ps3" ? ["openFile"] : ["openFile", "multiSelections"],
+    properties: generation === "ps5" ? ["openFile"] : ["openFile", "multiSelections"],
     filters,
     title: isArabic ? "اختر ملفات المشروع" : "Select project files",
   });
@@ -343,21 +339,6 @@ ipcMain.handle("hub:choose-folder", async (_event, purpose, language = "en") => 
       : purpose === "output" ? "Choose output folder" : "Choose module parent folder",
   });
   return result.canceled ? null : result.filePaths[0];
-});
-
-ipcMain.handle("hub:configure-ps5-tool", async (_event, language = "en") => {
-  const result = await dialog.showOpenDialog({
-    properties: ["openFile"],
-    filters: [{ name: "Windows executable", extensions: ["exe"] }],
-    title: language === "ar" ? "اختر أداة AnyPS5 لإعادة الربط" : "Select the AnyPS5 relinker executable",
-  });
-  if (result.canceled) return null;
-
-  const executablePath = result.filePaths[0];
-  const config = await readToolConfig();
-  config.ps5RelinkerPath = executablePath;
-  await writeToolConfig(config);
-  return executablePath;
 });
 
 ipcMain.handle("hub:install-ps5-tools", async (event) => {
@@ -570,89 +551,118 @@ ipcMain.handle("hub:run-ps5-relinker", async (event, input) => {
     }
   }
 
-  await fs.cp(toolStatus.ps5LibrariesPath, outputLibrariesPath, {
-    recursive: true,
-    errorOnExist: true,
-  });
-  for (const name of runtimeDllNames) {
-    await fs.copyFile(path.join(runtimeDirectory, name), path.join(outputDirectory, name));
-  }
-
   const sourceApp0Path = path.join(moduleParentPath, "app0");
   const sourceApp0Stat = await fs.stat(sourceApp0Path).catch(() => null);
-  const resourcesIncluded = Boolean(sourceApp0Stat?.isDirectory());
-  if (sourceApp0Stat && !sourceApp0Stat.isDirectory()) {
-    throw new Error("The app0 resource path exists but is not a folder.");
+  if (!sourceApp0Stat?.isDirectory()) {
+    throw new Error("The selected game folder must contain app0 with the game's original resources.");
   }
-  if (resourcesIncluded) {
-    const generatedModuleFolders = new Set(["sce_module", "sce_modules", "prx"]);
-    await fs.cp(sourceApp0Path, outputApp0Path, {
+  const originalBootStat = await fs.stat(path.join(sourceApp0Path, "eboot.bin")).catch(() => null);
+  if (!originalBootStat?.isFile()) {
+    throw new Error("The app0 resource folder must include the game's original eboot.bin file.");
+  }
+  const resourcesIncluded = true;
+
+  const stagingDirectory = path.join(outputDirectory, `.anyps5-${process.pid}-${Date.now()}`);
+  await fs.mkdir(stagingDirectory, { recursive: false });
+  const stagedOutputPath = path.join(stagingDirectory, path.basename(outputPath));
+  const stagedApp0Path = path.join(stagingDirectory, "app0");
+  const stagedLibrariesPath = path.join(stagingDirectory, "libs");
+
+  try {
+    await fs.cp(toolStatus.ps5LibrariesPath, stagedLibrariesPath, {
       recursive: true,
       errorOnExist: true,
-      filter: (source) => {
-        const relativePath = path.relative(sourceApp0Path, source);
-        const firstSegment = relativePath.split(path.sep)[0]?.toLowerCase();
-        return relativePath === "" || !generatedModuleFolders.has(firstSegment);
-      },
     });
-  }
-
-  const args = [
-    "--windows",
-    "--rpath",
-    "$ORIGIN/libs",
-    "--sce-module-path",
-    moduleParentPath,
-    sourcePath,
-    outputPath,
-  ];
-  return new Promise((resolve, reject) => {
-    const child = spawn(executablePath, args, {
-      cwd: outputDirectory,
-      windowsHide: true,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    runningProcesses.set(event.sender.id, child);
-
-    const sendOutput = (stream, chunk) => {
-      event.sender.send("hub:tool-output", {
-        stream,
-        text: chunk.toString("utf8"),
+    for (const name of runtimeDllNames) {
+      await fs.copyFile(path.join(runtimeDirectory, name), path.join(stagingDirectory, name));
+    }
+    if (resourcesIncluded) {
+      const generatedModuleFolders = new Set(["sce_module", "sce_modules", "prx"]);
+      await fs.cp(sourceApp0Path, stagedApp0Path, {
+        recursive: true,
+        errorOnExist: true,
+        filter: (source) => {
+          const relativePath = path.relative(sourceApp0Path, source);
+          const firstSegment = relativePath.split(path.sep)[0]?.toLowerCase();
+          return relativePath === "" || !generatedModuleFolders.has(firstSegment);
+        },
       });
-    };
-    child.stdout.on("data", (chunk) => sendOutput("stdout", chunk));
-    child.stderr.on("data", (chunk) => sendOutput("stderr", chunk));
-    child.once("error", (error) => {
-      runningProcesses.delete(event.sender.id);
-      reject(new Error(`Could not start the relinker: ${error.message}`));
+    }
+
+    const args = [
+      "--windows",
+      "--rpath",
+      "$ORIGIN/libs",
+      "--sce-module-path",
+      moduleParentPath,
+      sourcePath,
+      stagedOutputPath,
+    ];
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(executablePath, args, {
+        cwd: stagingDirectory,
+        windowsHide: true,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      runningProcesses.set(event.sender.id, child);
+
+      const sendOutput = (stream, chunk) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send("hub:tool-output", {
+            stream,
+            text: chunk.toString("utf8"),
+          });
+        }
+      };
+      child.stdout.on("data", (chunk) => sendOutput("stdout", chunk));
+      child.stderr.on("data", (chunk) => sendOutput("stderr", chunk));
+      child.once("error", (error) => reject(new Error(`Could not start the relinker: ${error.message}`)));
+      child.once("close", (code, signal) => {
+        if (signal) {
+          resolve({ ok: false, cancelled: true });
+        } else if (code === 0) {
+          resolve({ ok: true });
+        } else {
+          resolve({
+            ok: false,
+            exitCode: code,
+            message: `The relinker exited with code ${code ?? "unknown"}.`,
+          });
+        }
+      });
     });
-    child.once("close", (code, signal) => {
-      runningProcesses.delete(event.sender.id);
-      if (signal) {
-        resolve({ ok: false, cancelled: true, outputPath });
-      } else if (code === 0) {
-        void inspectPeExecutable(outputPath).then((validPe) => {
-          if (!validPe) {
-            resolve({
-              ok: false,
-              outputPath,
-              message: "The relinker exited successfully but did not produce a valid Windows PE executable.",
-            });
-            return;
-          }
-          resolve({ ok: true, outputPath, resourcesIncluded });
-        }).catch((error) => reject(error));
-      } else {
-        resolve({
-          ok: false,
-          outputPath,
-          exitCode: code,
-          message: `The relinker exited with code ${code ?? "unknown"}.`,
-        });
-      }
-    });
-  });
+    if (!result.ok) return { ...result, outputPath };
+    if (!await inspectPeExecutable(stagedOutputPath)) {
+      return {
+        ok: false,
+        outputPath,
+        message: "The relinker exited successfully but did not produce a valid Windows PE executable.",
+      };
+    }
+    const stagedApp0Stat = await fs.stat(stagedApp0Path).catch(() => null);
+    if (!stagedApp0Stat?.isDirectory()) {
+      return {
+        ok: false,
+        outputPath,
+        message: "The relinker did not produce the app0 module folder required by the game package.",
+      };
+    }
+
+    const packageFiles = [
+      [stagedOutputPath, outputPath],
+      [stagedApp0Path, outputApp0Path],
+      [stagedLibrariesPath, outputLibrariesPath],
+      ...runtimeDllNames.map((name) => [path.join(stagingDirectory, name), path.join(outputDirectory, name)]),
+    ];
+    for (const [stagedPath, finalPath] of packageFiles) {
+      await fs.rename(stagedPath, finalPath);
+    }
+    return { ok: true, outputPath, resourcesIncluded };
+  } finally {
+    runningProcesses.delete(event.sender.id);
+    await fs.rm(stagingDirectory, { recursive: true, force: true }).catch(() => {});
+  }
 });
 
 ipcMain.handle("hub:cancel-run", (event) => {

@@ -133,7 +133,7 @@ function App() {
     if (!bridge?.isDesktop) return;
 
     void bridge.getToolStatus().then(setToolStatus).catch(() => {
-      setMessage(translate(language, 'configureError'));
+      setMessage(translate(language, 'chooseInputError'));
     });
     const removeOutputListener = bridge.onToolOutput(({ stream, text }) => {
       const lines = text.split(/\r?\n/).filter(Boolean);
@@ -187,9 +187,7 @@ function App() {
     ? hasCue
     : generation === 'ps2'
       ? hasElf && hasPs2Config
-      : generation === 'ps3'
-        ? hasElf
-        : hasElf && hasModule && !hasPkg;
+      : hasElf && hasModule && !hasPkg;
   const isBlocked = checked && !isReady;
   const title = activeGenerationInfo[generation];
 
@@ -298,17 +296,6 @@ function App() {
     }
   }
 
-  async function configurePs5Tool() {
-    const bridge = window.recompHub;
-    if (!bridge?.isDesktop) return;
-    try {
-      const selectedPath = await bridge.configurePs5Tool(language);
-      if (selectedPath) setToolStatus(await bridge.getToolStatus());
-    } catch {
-      setMessage(t('configureError'));
-    }
-  }
-
   async function installPs5Toolchain() {
     const bridge = window.recompHub;
     if (!bridge?.isDesktop || installingPs5Tools) return;
@@ -316,7 +303,8 @@ function App() {
     setToolProgress({ phase: 'release', percent: 0 });
     setMessage('');
     try {
-      setToolStatus(await bridge.installPs5Tools());
+      await bridge.installPs5Tools();
+      setToolStatus(await bridge.getToolStatus());
       setToolProgress({ phase: 'complete', percent: 100 });
       setMessage(t('toolInstallSuccess'));
     } catch (error) {
@@ -366,11 +354,6 @@ function App() {
 
     if (generation === 'ps2') {
       setMessage(t('ps2NoConverter'));
-      return;
-    }
-
-    if (generation === 'ps3') {
-      setMessage(t('ps3NoRunner'));
       return;
     }
 
@@ -456,16 +439,12 @@ function App() {
     ? '.cue,.bin'
     : generation === 'ps2'
       ? '.elf,.toml,.csv,.iso'
-      : generation === 'ps3'
-        ? '.elf'
-        : '.elf,.prx,.pkg';
+      : '.elf,.prx,.pkg';
   const dropHintKey: TranslationKey = generation === 'ps1'
     ? 'ps1DropHint'
     : generation === 'ps2'
       ? 'ps2DropHint'
-      : generation === 'ps3'
-        ? 'ps3DropHint'
-        : 'ps5DropHint';
+      : 'ps5DropHint';
   const runLabel = running
     ? t('runningTool')
     : desktop && generation === 'ps5' && toolStatus?.ps5RelinkerReady && toolStatus.ps5LibrariesReady && toolStatus.ps5RuntimeReady
@@ -474,9 +453,18 @@ function App() {
         ? t('inspectPs1')
         : generation === 'ps2'
           ? t('inspectPs2')
-          : generation === 'ps3'
-            ? t('inspectPs3')
-            : t('checkInputs');
+          : t('checkInputs');
+  const toolProgressLabel = !toolProgress
+    ? ''
+    : toolProgress.phase === 'download'
+      ? `${t('toolProgressDownloading')} ${toolProgress.asset ?? ''} · ${toolProgress.percent}%`
+      : toolProgress.phase === 'extract'
+        ? t('toolProgressExtracting')
+        : toolProgress.phase === 'complete'
+          ? t('toolProgressComplete')
+          : toolProgress.phase === 'error'
+            ? t('toolProgressError')
+            : t('toolProgressChecking');
 
   const repoTitle: Record<RepositoryUpdate['id'], TranslationKey> = repoTitleKeys;
   const repoScope: Record<RepositoryUpdate['id'], TranslationKey> = repoScopeKeys;
@@ -585,7 +573,7 @@ function App() {
                 ref={fileInputRef}
                 className="file-input"
                 type="file"
-                multiple={generation !== 'ps3'}
+                multiple
                 accept={acceptedFiles}
                 aria-label={t('inputFileLabel')}
                 data-testid="input-project-files"
@@ -648,13 +636,23 @@ function App() {
                     <div className="desktop-control-meta">
                       <strong>{t('anyps5Tool')}</strong>
                       <span title={toolStatus?.ps5RelinkerPath ?? ''}>
-                        {toolStatus?.ps5RelinkerReady ? basename(toolStatus.ps5RelinkerPath!) : t('noRelinker')}
+                        {toolStatus?.ps5RelinkerReady && toolStatus.ps5LibrariesReady && toolStatus.ps5RuntimeReady
+                          ? `${toolStatus.ps5ToolVersion ?? basename(toolStatus.ps5RelinkerPath!)} · ${t('toolsReady')}`
+                          : t('toolsNotReady')}
                       </span>
                     </div>
-                    <button className="select-button secondary-select" type="button" data-testid="button-configure-ps5-tool" onClick={() => void configurePs5Tool()}>
-                      <FilePlus2 size={14} /> {t('configureTool')}
+                    <button
+                      className="select-button secondary-select"
+                      type="button"
+                      data-testid="button-install-ps5-tools"
+                      disabled={installingPs5Tools}
+                      onClick={() => void installPs5Toolchain()}
+                    >
+                      <FilePlus2 size={14} /> {installingPs5Tools ? t('toolInstallButtonBusy') : t('toolInstallButton')}
                     </button>
                   </div>
+                  {toolProgressLabel && <p className="desktop-controls-note" role="status" aria-live="polite">{toolProgressLabel}</p>}
+                  <p className="desktop-controls-note">{t('toolInstallNote')}</p>
                   <div className="desktop-control-row">
                     <div className="desktop-control-meta">
                       <strong>{t('modulesFolder')}</strong>
@@ -697,25 +695,9 @@ function App() {
                 </div>
               )}
 
-              {generation === 'ps3' && (
-                <div className="scope-callout ps2-callout" data-testid="notice-ps3-scope">
-                  <Monitor size={18} />
-                  <div>
-                    <strong>{t('ps3ScopeTitle')}</strong>
-                    <p>{t('ps3Scope')}</p>
-                    <a href="https://github.com/sp00nznet/ps3recomp" target="_blank" rel="noreferrer" onClick={() => {
-                      const update = repoUpdates.ps3;
-                      if (update) acknowledgeRepository(update);
-                    }}>
-                      {t('openPs3Project')} <ExternalLink size={13} />
-                    </a>
-                  </div>
-                </div>
-              )}
-
               <div className="toast-live" role="status" aria-live="polite" data-testid="status-file-message">{message}</div>
               <div className="rule-divider" />
-              <h3 className="requirements-heading">{generation === 'ps1' ? t('ps1ReqTitle') : generation === 'ps2' ? t('ps2ReqTitle') : generation === 'ps3' ? t('ps3ReqTitle') : t('ps5ReqTitle')}</h3>
+              <h3 className="requirements-heading">{generation === 'ps1' ? t('ps1ReqTitle') : generation === 'ps2' ? t('ps2ReqTitle') : t('ps5ReqTitle')}</h3>
               <div className="requirements">
                 {generation === 'ps1' ? (
                   <>
@@ -728,12 +710,6 @@ function App() {
                     <div className="requirement"><Gamepad2 size={15} /><span><strong>PS2Recomp</strong> {t('ps2Req1')}</span></div>
                     <div className="requirement"><Info size={15} /><span>{t('ps2Req2')}</span></div>
                     <div className="requirement"><Disc3 size={15} /><span>{t('ps2Req3')}</span></div>
-                  </>
-                ) : generation === 'ps3' ? (
-                  <>
-                    <div className="requirement"><FileCode2 size={15} /><span><strong>PS3Recomp</strong> {t('ps3Req1')}</span></div>
-                    <div className="requirement"><Info size={15} /><span>{t('ps3Req2')}</span></div>
-                    <div className="requirement"><AlertCircle size={15} /><span>{t('ps3Req3')}</span></div>
                   </>
                 ) : (
                   <>
@@ -792,11 +768,6 @@ function App() {
                           </div>
                         )}
                       </>
-                    ) : generation === 'ps3' ? (
-                      <div className={`validation-item ${hasElf ? 'good' : 'bad'}`}>
-                        {hasElf ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                        <span>{hasElf ? t('ps3ElfFound') : t('ps3ElfMissing')}</span>
-                      </div>
                     ) : (
                       <>
                         <div className={`validation-item ${hasElf ? 'good' : 'bad'}`}>
