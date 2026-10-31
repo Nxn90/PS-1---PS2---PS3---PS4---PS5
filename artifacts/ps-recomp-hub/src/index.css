@@ -216,6 +216,9 @@ button.generation-card:not(:disabled):hover { transform: translateY(-2px); borde
 .run-button:disabled { color: #8292a0; cursor: not-allowed; background: #edf1f3; }
 .run-button.valid { color: #fff; background: #285d92; border-color: #285d92; }
 .run-button.valid:hover { background: #204f7d; }
+.conversion-actions { display: grid; gap: 8px; margin-top: auto; }
+.conversion-actions .run-button { margin-top: 0; }
+.conversion-hint { margin: 0; color: #8190a0; font-size: 9px; line-height: 1.8; }
 .tool-log { max-height: 190px; overflow: auto; margin: 12px 0; padding: 11px; border: 1px solid #273b4d; border-radius: 10px; background: #111c28; color: #c7d4df; direction: ltr; text-align: left; }
 .tool-log-heading { margin-bottom: 8px; color: #8fb4d4; font-size: 10px; font-weight: 700; }
 .tool-log-line { overflow-wrap: anywhere; color: #bac8d4; font-size: 9px; line-height: 1.7; white-space: pre-wrap; }
@@ -367,6 +370,7 @@ button.generation-card:not(:disabled):hover { border-color: #4676a7; }
 .run-button:disabled { background: #202933; color: #8190a0; }
 .run-button.valid { border-color: #2377ca; background: #1768b6; color: #fff; }
 .run-button.valid:hover { background: #2479c5; }
+.conversion-hint { color: #99a7b5; }
 .native-note { color: #99a7b5; }
 .native-note svg { color: #d6a366; }
 .notice-strip { border-color: #293e52; background: rgba(19, 32, 46, .88); color: #a7b6c5; }
