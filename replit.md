@@ -34,6 +34,7 @@ A Windows desktop companion for native PlayStation recompilation and porting pro
 ## Gotchas
 
 - The Electron Windows installer is the Hub app, not a converted game.
+- Keep “Check requirements” separate from “Start conversion”; checking must never launch a converter.
 - PS5 does not accept encrypted retail PKG files directly. The user supplies a clean ELF, module files, and `app0` resources including `eboot.bin`.
 - A completed PS5 output is a game folder containing the EXE, `app0`, `libs`, and required runtime DLLs; it is not a standalone EXE.
 - Native AnyPS5 execution is Windows-only and has not been exercised by the Replit browser preview.

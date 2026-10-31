@@ -42,6 +42,102 @@ function runUtility(command, args, options = {}) {
   });
 }
 
+function runDesktopTool(event, command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      ...options,
+      windowsHide: true,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const senderId = event.sender.id;
+    let settled = false;
+    runningProcesses.set(senderId, child);
+
+    const sendOutput = (stream, chunk) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("hub:tool-output", { stream, text: chunk.toString("utf8") });
+      }
+    };
+    const clearProcess = () => {
+      if (runningProcesses.get(senderId) === child) runningProcesses.delete(senderId);
+    };
+
+    child.stdout.on("data", (chunk) => sendOutput("stdout", chunk));
+    child.stderr.on("data", (chunk) => sendOutput("stderr", chunk));
+    child.once("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearProcess();
+      reject(new Error(`Could not start ${command}: ${error.message}`));
+    });
+    child.once("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearProcess();
+      resolve({ code, signal });
+    });
+  });
+}
+
+async function validatePs1DiscSet(paths) {
+  if (!Array.isArray(paths) || paths.length < 1 || paths.length > 32) {
+    throw new Error("Choose between 1 and 32 PS1 CUE files.");
+  }
+
+  for (const selectedPath of paths) {
+    if (typeof selectedPath !== "string" || path.extname(selectedPath).toLowerCase() !== ".cue") {
+      throw new Error("The PS1 disc set must contain CUE files.");
+    }
+    const cuePath = path.resolve(selectedPath);
+    const cueStat = await fs.stat(cuePath);
+    if (!cueStat.isFile() || cueStat.size > 1024 * 1024) {
+      throw new Error("A CUE file is invalid or too large to inspect.");
+    }
+
+    const cueText = await fs.readFile(cuePath, "utf8");
+    const referencedFiles = [...cueText.matchAll(/^\s*FILE\s+(?:"([^"]+)"|(\S+))/gim)]
+      .map((match) => match[1] || match[2])
+      .filter(Boolean);
+    if (referencedFiles.length === 0) {
+      throw new Error(`No FILE tracks were found in ${path.basename(cuePath)}.`);
+    }
+
+    const cueDirectory = path.dirname(cuePath);
+    for (const reference of referencedFiles) {
+      const referencedPath = path.resolve(cueDirectory, reference);
+      const relative = path.relative(cueDirectory, referencedPath);
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error(`A track reference in ${path.basename(cuePath)} points outside its disc folder.`);
+      }
+      const referencedStat = await fs.stat(referencedPath).catch(() => null);
+      if (!referencedStat?.isFile()) {
+        throw new Error(`A track referenced by ${path.basename(cuePath)} was not found.`);
+      }
+    }
+  }
+}
+
+async function findPs1Executable(buildDirectory, expectedName) {
+  const pending = [buildDirectory];
+  const expected = expectedName.toLowerCase();
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isFile() && entry.name.toLowerCase() === expected) return fullPath;
+      if (
+        entry.isDirectory() &&
+        !["cmakefiles", "_deps", "testing", "third_party"].includes(entry.name.toLowerCase())
+      ) {
+        pending.push(fullPath);
+      }
+    }
+  }
+  return null;
+}
+
 async function downloadVerifiedAsset(asset, targetPath, event, range) {
   const assetUrl = new URL(asset.browser_download_url);
   if (assetUrl.protocol !== "https:" || assetUrl.hostname !== "github.com") {
@@ -288,42 +384,7 @@ ipcMain.handle("hub:choose-input", async (_event, generation, language = "en") =
 });
 
 ipcMain.handle("hub:validate-ps1-disc-set", async (_event, paths) => {
-  if (!Array.isArray(paths) || paths.length < 1 || paths.length > 32) {
-    throw new Error("Choose between 1 and 32 PS1 CUE files.");
-  }
-
-  for (const selectedPath of paths) {
-    if (typeof selectedPath !== "string" || path.extname(selectedPath).toLowerCase() !== ".cue") {
-      throw new Error("The PS1 disc set must contain CUE files.");
-    }
-    const cuePath = path.resolve(selectedPath);
-    const cueStat = await fs.stat(cuePath);
-    if (!cueStat.isFile() || cueStat.size > 1024 * 1024) {
-      throw new Error("A CUE file is invalid or too large to inspect.");
-    }
-
-    const cueText = await fs.readFile(cuePath, "utf8");
-    const referencedFiles = [...cueText.matchAll(/^\s*FILE\s+(?:"([^"]+)"|(\S+))/gim)]
-      .map((match) => match[1] || match[2])
-      .filter(Boolean);
-    if (referencedFiles.length === 0) {
-      throw new Error(`No FILE tracks were found in ${path.basename(cuePath)}.`);
-    }
-
-    const cueDirectory = path.dirname(cuePath);
-    for (const reference of referencedFiles) {
-      const referencedPath = path.resolve(cueDirectory, reference);
-      const relative = path.relative(cueDirectory, referencedPath);
-      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-        throw new Error(`A track reference in ${path.basename(cuePath)} points outside its disc folder.`);
-      }
-      const referencedStat = await fs.stat(referencedPath).catch(() => null);
-      if (!referencedStat?.isFile()) {
-        throw new Error(`A track referenced by ${path.basename(cuePath)} was not found.`);
-      }
-    }
-  }
-
+  await validatePs1DiscSet(paths);
   return { ok: true, discCount: paths.length };
 });
 
@@ -339,6 +400,136 @@ ipcMain.handle("hub:choose-folder", async (_event, purpose, language = "en") => 
       : purpose === "output" ? "Choose output folder" : "Choose module parent folder",
   });
   return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle("hub:run-ps1-build", async (event, input) => {
+  if (process.platform !== "win32") {
+    throw new Error("The PS1 Windows build can only run from the packaged Windows app.");
+  }
+  if (runningProcesses.has(event.sender.id)) {
+    throw new Error("A conversion is already running.");
+  }
+
+  const rawCuePath = input?.cuePath;
+  const rawOutputDirectory = input?.outputDirectory;
+  if (![rawCuePath, rawOutputDirectory].every((value) => typeof value === "string" && value.trim())) {
+    throw new Error("Choose one CUE file and an output folder using the Windows file dialogs.");
+  }
+  const cuePath = path.resolve(rawCuePath);
+  const outputDirectory = path.resolve(rawOutputDirectory);
+  const [cueStat, outputStat] = await Promise.all([fs.stat(cuePath), fs.stat(outputDirectory)]);
+  if (!cueStat.isFile() || path.extname(cuePath).toLowerCase() !== ".cue") {
+    throw new Error("PSXRecomp requires a CUE disc image.");
+  }
+  if (!outputStat.isDirectory()) throw new Error("The output path is not a folder.");
+  await validatePs1DiscSet([cuePath]);
+
+  const rawTitle = path.basename(cuePath, path.extname(cuePath))
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9 _-]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 48);
+  const title = rawTitle || "PS1 Game";
+  const projectName = /recomp$/i.test(title) ? title : `${title}Recomp`;
+  const projectSlug = projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60).replace(/-$/g, "");
+  const windowTitle = projectName.replace(/Recomp$/i, " Recompiled").replace(/Recompiled Recompiled/g, "Recompiled");
+  const expectedExeName = `${windowTitle.replace(/[^A-Za-z0-9_]/g, "_")}.exe`;
+  const projectDirectory = path.join(outputDirectory, projectSlug);
+  try {
+    await fs.access(projectDirectory);
+    throw new Error("The output folder already contains this PS1 project. Choose another output folder.");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+
+  const toolsDirectory = path.join(app.getPath("userData"), "tools");
+  const frameworkDirectory = path.join(toolsDirectory, "psxrecomp");
+  const setupScript = path.join(frameworkDirectory, "tools", "new_project_layout", "setup_project.ps1");
+  const hasSetupScript = await fs.access(setupScript).then(() => true, () => false);
+  if (!hasSetupScript) {
+    await fs.rm(frameworkDirectory, { recursive: true, force: true });
+    await fs.mkdir(toolsDirectory, { recursive: true });
+    const clone = await runDesktopTool(event, "git", [
+      "clone",
+      "--depth",
+      "1",
+      "--recurse-submodules",
+      "--shallow-submodules",
+      "--progress",
+      "https://github.com/RetroPortingToolKit/psxrecomp.git",
+      frameworkDirectory,
+    ], {
+      cwd: toolsDirectory,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+    if (clone.signal) {
+      await fs.rm(frameworkDirectory, { recursive: true, force: true });
+      return { ok: false, cancelled: true, projectPath: projectDirectory };
+    }
+    if (clone.code !== 0) {
+      await fs.rm(frameworkDirectory, { recursive: true, force: true });
+      return {
+        ok: false,
+        projectPath: projectDirectory,
+        message: `Could not download the official PSXRecomp source (exit code ${clone.code ?? "unknown"}). Check that Git for Windows and internet access are available.`,
+      };
+    }
+  }
+  if (!await fs.access(setupScript).then(() => true, () => false)) {
+    throw new Error("The PSXRecomp download is incomplete; remove its cached folder and try again.");
+  }
+
+  const setup = await runDesktopTool(event, "powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    setupScript,
+    "-Disc",
+    cuePath,
+    "-Dir",
+    outputDirectory,
+    "-Name",
+    projectName,
+    "-GithubRepo",
+    projectSlug,
+    "-Players",
+    "1",
+    "-Yes",
+    "-EnableRecompUi",
+    "-EnableWizard",
+    "-NoNetplay",
+    "-NoFetchBoxart",
+    "-NoCi",
+    "-NoGithub",
+    "-Generate",
+    "-EnableBuild",
+  ], {
+    cwd: frameworkDirectory,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
+  if (setup.signal) return { ok: false, cancelled: true, projectPath: projectDirectory };
+  if (setup.code !== 0) {
+    return {
+      ok: false,
+      projectPath: projectDirectory,
+      exitCode: setup.code,
+      message: `PSXRecomp setup/build exited with code ${setup.code ?? "unknown"}. Review the log for missing Windows prerequisites or game-specific errors.`,
+    };
+  }
+
+  const buildDirectory = path.join(projectDirectory, "build-release");
+  const executablePath = await findPs1Executable(buildDirectory, expectedExeName).catch(() => null);
+  if (!executablePath || !await inspectPeExecutable(executablePath)) {
+    return {
+      ok: false,
+      projectPath: projectDirectory,
+      message: "PSXRecomp did not produce the expected Windows EXE. Review the build log; this disc may need title-specific setup.",
+    };
+  }
+  return { ok: true, projectPath: projectDirectory, outputPath: executablePath };
 });
 
 ipcMain.handle("hub:install-ps5-tools", async (event) => {

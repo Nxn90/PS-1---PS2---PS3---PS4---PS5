@@ -7,6 +7,14 @@ declare global {
       chooseInput: (generation: "ps1" | "ps2" | "ps5", language: "ar" | "en") => Promise<string[] | null>;
       validatePs1DiscSet: (paths: string[]) => Promise<{ ok: boolean; discCount: number }>;
       chooseFolder: (purpose: "output" | "modules", language: "ar" | "en") => Promise<string | null>;
+      runPs1Build: (input: { cuePath: string; outputDirectory: string }) => Promise<{
+        ok: boolean;
+        cancelled?: boolean;
+        projectPath: string;
+        outputPath?: string;
+        exitCode?: number;
+        message?: string;
+      }>;
       installPs5Tools: () => Promise<{
         ps5RelinkerReady: boolean;
         ps5RelinkerPath: string | null;

@@ -188,6 +188,53 @@ function App() {
     : generation === 'ps2'
       ? hasElf && hasPs2Config
       : hasElf && hasModule && !hasPkg;
+  const ps5ToolsReady = Boolean(
+    toolStatus?.ps5RelinkerReady && toolStatus.ps5LibrariesReady && toolStatus.ps5RuntimeReady,
+  );
+  const hasNativePs1Cue = Boolean(
+    cueFiles.length === 1 && cueFiles[0].path && cueFiles[0].path === nativePaths.sourcePath,
+  );
+  const canStartConversion = Boolean(
+    desktop &&
+    !running &&
+    (
+      generation === 'ps1'
+        ? isReady && hasNativePs1Cue && nativePaths.outputDirectory
+        : generation === 'ps5' &&
+          isReady &&
+          nativePaths.sourcePath &&
+          nativePaths.moduleParentPath &&
+          nativePaths.outputDirectory &&
+          ps5ToolsReady
+    ),
+  );
+  const conversionHint = generation === 'ps1'
+    ? !desktop
+      ? t('browserNativeCopy')
+      : !isReady
+        ? t('reviewMissing')
+        : cueFiles.length !== 1
+          ? t('ps1SingleDiscOnly')
+          : !hasNativePs1Cue
+            ? t('ps1UseNativePicker')
+            : !nativePaths.outputDirectory
+              ? t('outputNeeded')
+              : t('ps1ConversionReady')
+    : generation === 'ps2'
+      ? t('ps2NoConverter')
+      : !desktop
+        ? t('browserNativeCopy')
+        : !isReady
+          ? t('reviewMissing')
+          : !nativePaths.sourcePath
+            ? t('sourceNeeded')
+            : !nativePaths.moduleParentPath
+              ? t('modulesNeeded')
+              : !nativePaths.outputDirectory
+                ? t('outputNeeded')
+                : !ps5ToolsReady
+                  ? t('toolBundleNeeded')
+                  : t('conversionReady');
   const isBlocked = checked && !isReady;
   const title = activeGenerationInfo[generation];
 
@@ -269,7 +316,7 @@ function App() {
       setFiles(selectedFiles);
       setNativePaths((current) => ({
         ...current,
-        sourcePath: generation === 'ps5' ? selectedPaths[0] : null,
+        sourcePath: generation === 'ps5' || generation === 'ps1' ? selectedPaths[0] : null,
       }));
       setChecked(false);
       setNativeNotice(false);
@@ -338,7 +385,10 @@ function App() {
     setChecked(true);
     setNativeNotice(false);
     setMessage('');
-    if (!isReady) return;
+    if (!isReady) {
+      setMessage(t('reviewMissing'));
+      return;
+    }
 
     if (generation === 'ps1') {
       try {
@@ -347,8 +397,18 @@ function App() {
         setMessage(t('ps1CueInvalid'));
         return;
       }
-      setMessage(desktop ? t('ps1ProjectNeeded') : t('browserNativeCopy'));
-      if (!desktop) setNativeNotice(true);
+      if (!desktop) {
+        setNativeNotice(true);
+        setMessage(t('browserNativeCopy'));
+      } else if (cueFiles.length !== 1) {
+        setMessage(t('ps1SingleDiscOnly'));
+      } else if (!hasNativePs1Cue) {
+        setMessage(t('ps1UseNativePicker'));
+      } else if (!nativePaths.outputDirectory) {
+        setMessage(t('outputNeeded'));
+      } else {
+        setMessage(t('ps1RequirementsPassed'));
+      }
       return;
     }
 
@@ -359,11 +419,11 @@ function App() {
 
     if (!desktop) {
       setNativeNotice(true);
+      setMessage(t('browserNativeCopy'));
       return;
     }
 
-    const sourcePath = nativePaths.sourcePath;
-    if (!sourcePath) {
+    if (!nativePaths.sourcePath) {
       setMessage(t('sourceNeeded'));
       return;
     }
@@ -376,6 +436,91 @@ function App() {
       return;
     }
     if (!toolStatus?.ps5RelinkerReady || !toolStatus.ps5LibrariesReady || !toolStatus.ps5RuntimeReady) {
+      setMessage(t('toolBundleNeeded'));
+      return;
+    }
+    setMessage(t('requirementsPassed'));
+  }
+
+  async function startConversion() {
+    setChecked(true);
+    setNativeNotice(false);
+    setMessage('');
+
+    if (generation === 'ps1') {
+      if (!desktop) {
+        setNativeNotice(true);
+        setMessage(t('browserNativeCopy'));
+        return;
+      }
+      if (!isReady) {
+        setMessage(t('reviewMissing'));
+        return;
+      }
+      if (cueFiles.length !== 1) {
+        setMessage(t('ps1SingleDiscOnly'));
+        return;
+      }
+      if (!hasNativePs1Cue || !nativePaths.sourcePath) {
+        setMessage(t('ps1UseNativePicker'));
+        return;
+      }
+      if (!nativePaths.outputDirectory) {
+        setMessage(t('outputNeeded'));
+        return;
+      }
+      const bridge = window.recompHub;
+      if (!bridge) return;
+      setRunning(true);
+      setToolLogs([]);
+      try {
+        await bridge.validatePs1DiscSet([nativePaths.sourcePath]);
+        const result = await bridge.runPs1Build({
+          cuePath: nativePaths.sourcePath,
+          outputDirectory: nativePaths.outputDirectory,
+        });
+        if (result.ok && result.outputPath) {
+          setMessage(`${t('ps1BuildSuccess')} ${result.outputPath}`);
+        } else if (result.cancelled) {
+          setMessage(t('runCancelled'));
+        } else {
+          setMessage(result.message ?? t('runFailed'));
+        }
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : t('runFailed'));
+      } finally {
+        setRunning(false);
+      }
+      return;
+    }
+
+    if (generation !== 'ps5') {
+      setMessage(t('ps2NoConverter'));
+      return;
+    }
+    if (!desktop) {
+      setNativeNotice(true);
+      setMessage(t('browserNativeCopy'));
+      return;
+    }
+    if (!isReady) {
+      setMessage(t('reviewMissing'));
+      return;
+    }
+    if (!nativePaths.sourcePath) {
+      setMessage(t('sourceNeeded'));
+      return;
+    }
+    const sourcePath = nativePaths.sourcePath;
+    if (!nativePaths.moduleParentPath) {
+      setMessage(t('modulesNeeded'));
+      return;
+    }
+    if (!nativePaths.outputDirectory) {
+      setMessage(t('outputNeeded'));
+      return;
+    }
+    if (!ps5ToolsReady) {
       setMessage(t('toolBundleNeeded'));
       return;
     }
@@ -445,15 +590,6 @@ function App() {
     : generation === 'ps2'
       ? 'ps2DropHint'
       : 'ps5DropHint';
-  const runLabel = running
-    ? t('runningTool')
-    : desktop && generation === 'ps5' && toolStatus?.ps5RelinkerReady && toolStatus.ps5LibrariesReady && toolStatus.ps5RuntimeReady
-      ? t('runPs5')
-      : generation === 'ps1'
-        ? t('inspectPs1')
-        : generation === 'ps2'
-          ? t('inspectPs2')
-          : t('checkInputs');
   const toolProgressLabel = !toolProgress
     ? ''
     : toolProgress.phase === 'download'
@@ -679,6 +815,23 @@ function App() {
                 </div>
               )}
 
+              {desktop && generation === 'ps1' && (
+                <div className="desktop-controls" data-testid="desktop-ps1-controls">
+                  <div className="desktop-control-row">
+                    <div className="desktop-control-meta">
+                      <strong>{t('ps1OutputFolder')}</strong>
+                      <span title={nativePaths.outputDirectory ?? ''}>
+                        {nativePaths.outputDirectory ? basename(nativePaths.outputDirectory) : t('chooseOutput')}
+                      </span>
+                    </div>
+                    <button className="select-button secondary-select" type="button" data-testid="button-select-ps1-output" onClick={() => void selectNativeFolder('output')}>
+                      <FolderOpen size={14} /> {t('browse')}
+                    </button>
+                  </div>
+                  <p className="desktop-controls-note">{t('ps1BuildNote')}</p>
+                </div>
+              )}
+
               {generation === 'ps2' && (
                 <div className="scope-callout ps2-callout" data-testid="notice-ps2-scope">
                   <Gamepad2 size={18} />
@@ -792,16 +945,34 @@ function App() {
                 </div>
               )}
 
-              {desktop && generation === 'ps5' && toolLogs.length > 0 && (
-                <div className="tool-log" role="log" aria-label={t('toolLog')} data-testid="log-ps5-tool">
-                  <div className="tool-log-heading">{t('toolLog')}</div>
+              {desktop && (generation === 'ps1' || generation === 'ps5') && toolLogs.length > 0 && (
+                <div className="tool-log" role="log" aria-label={t(generation === 'ps1' ? 'ps1ToolLog' : 'toolLog')} data-testid={`log-${generation}-tool`}>
+                  <div className="tool-log-heading">{t(generation === 'ps1' ? 'ps1ToolLog' : 'toolLog')}</div>
                   {toolLogs.map((line, index) => <div className="tool-log-line mono" key={`${index}-${line}`}>{line}</div>)}
                 </div>
               )}
 
-              <button className={`run-button ${isReady ? 'valid' : ''}`} type="button" disabled={running} data-testid="button-check-files" onClick={() => void inspectPrerequisites()}>
-                <Play size={14} /> {runLabel}
-              </button>
+              <div className="conversion-actions">
+                <button
+                  className="run-button requirements-button"
+                  type="button"
+                  disabled={running}
+                  data-testid="button-check-requirements"
+                  onClick={() => void inspectPrerequisites()}
+                >
+                  <ShieldCheck size={14} /> {t('buttonCheckRequirements')}
+                </button>
+                <button
+                  className={`run-button conversion-button ${canStartConversion ? 'valid' : ''}`}
+                  type="button"
+                  disabled={!canStartConversion || running}
+                  data-testid="button-start-conversion"
+                  onClick={() => void startConversion()}
+                >
+                  <Play size={14} /> {running ? t('runningTool') : t('startConversion')}
+                </button>
+              </div>
+              <p className="conversion-hint" role="status" aria-live="polite">{conversionHint}</p>
               {running && <button className="cancel-button" type="button" data-testid="button-cancel-run" onClick={() => void window.recompHub?.cancelRun()}>{t('cancel')}</button>}
               <div className="native-note"><LockKeyhole size={13} /><span>{desktop ? t('localPrivacyDesktop') : t('localPrivacyBrowser')}</span></div>
             </aside>
